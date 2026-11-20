@@ -7,14 +7,36 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 1. **Timeline**: the full animation workflow. A keyframe editor docked above the transport row, a curve editor, framing
    all, selected or current keys, key pages (interpolation, tangents, what happens before and after the keys), and
    jumping to or deleting keys from any setting. Today's timeline is the transport row only.
-2. **Cloning tools (MoClone)**: copies of objects arranged in grids, circles, along splines and over surfaces; objects
-   broken into pieces; and effectors and fields that vary the copies' position, size and colour. Their create-column
-   buttons are already there, greyed.
 
 ## Splines (`splines.py`)
 - Our own point-editing tools (Blender's curve edit mode and Pen stand in today).
 - More ways to space the points along a curve (only even spacing today).
 - More shapes, and gears with shaped teeth.
+
+## MoClone (`moclone.py`)
+In:
+- Objects: the Cloner (Linear, Grid with box, ball and cylinder forms, Radial, Honeycomb, Object; a Null with objects
+  under it is copied as one clone), Matrix, Fracture, Voronoi Fracture and Tracer.
+- Effectors: Random (Uniform, Gaussian, Noise), Plain, Shader (Noise, Cells, Waves, Checker, Image), Delay (Blend,
+  Spring), Wave, Step, Target (with Keep Upright), Time, Inheritance, Push Apart, Spline, Volume, Formula, Sound (one
+  band per piece, baked to keyframes) and Group (holds other effectors, with its own Strength and Fields). Every effector
+  that tints can use a fixed colour or a gradient.
+- Fields: Linear, Spherical, Box, Cylinder, Capsule, Cone, Torus, Radial, Random, Shader, Wave, Image (movies and
+  sequences play), Sound, Formula, Time, Object, Spline, Material (the image a material uses) and Group (holds other
+  Fields). Rows combine by Max, Add, Subtract, Multiply or Min, each with a Mix; effectors can make their Fields
+  remember (Keep, Fade).
+- Effector and Field lists take drops from the Object Manager and have a check box per row.
+
+Still to do:
+- Effectors: effectors acting on the child's own animation time, the Shader Effector reading a full material (only
+  its image today), a ReEffector separate from the Group Effector.
+- Fields: Remember with spreading (growth into neighbours), Field layers that change a Field (curve, remap, freeze).
+- More Cloner modes and options: spirals, copies inside a volume, Object mode reading the object's own selections,
+  more Clone Order options (blend between children, sorted by index).
+- Voronoi Fracture: points from another object or a Matrix, an inner material for the cut faces, cuts on open meshes.
+- Tracer: trace a spline's points or a mesh's points, not only object origins and Cloner copies kept as instances.
+- MoText, MoExtrude, MoInstance and MoSpline; MoGraph selections and weight maps.
+- Drag handles in the viewport for Count, spacing, Field sizes.
 
 ## Generators (`generators.py`)
 - More Sweep options: guide curves, scale and twist along the path, finer UV control.

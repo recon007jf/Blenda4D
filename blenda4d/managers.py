@@ -73,6 +73,7 @@ def manager_title(layout, title, right_tabs=None):
 # --- Object Manager -------------------------------------------------------------------------------------------------
 AM_SUBJECTS = {}             # "TAG" -> fn(layout, context, ob) -> True when it drew the page (wm.b4d_am_subject "TAG:...")
 OM_TAG_BUTTON = []           # [fn(layout, ob, slot_index, material)]: draws a material swatch as a clickable tag
+OM_DROP = []                 # [fn(context, event, objects, row name or TOP_LEVEL or "") -> True when it took the drop]
 _clicks = ["", 0.0]          # last Object Manager click: row name, time (two on one row = rename)
 _renamed = [0.0]
 
@@ -196,8 +197,7 @@ def visible_rows(context):
 
 
 def row_height():
-    s = bpy.context.preferences.system
-    return round(18 * s.ui_scale) + 2 * s.pixel_size
+    return roles.widget_unit()
 
 
 def row_at(context, region, mouse_y):
@@ -287,6 +287,9 @@ class BLENDA4D_OT_om_drag(bpy.types.Operator):
         if event.type == "LEFTMOUSE" and event.value == "RELEASE":
             t = self._target(context, event)
             self._end(context)
+            for fn in OM_DROP:                           # a feature module can take the drop (an effector into a list)
+                if fn(context, event, self.objs, "" if t == TOP_LEVEL else t):
+                    return {"FINISHED"}
             if not t:
                 return {"CANCELLED"}
             n = reparent(self.objs, None if t == TOP_LEVEL else bpy.data.objects.get(t))

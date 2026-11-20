@@ -30,6 +30,7 @@ OUT = os.path.join(ROOT, "blenda4d", "icons")
 CACHE = os.path.join(tempfile.gettempdir(), "blenda4d_icon_cache")
 BRANCH = "blender-v5.2-release"
 SVG_URL = "https://projects.blender.org/blender/blender/raw/branch/{branch}/release/datafiles/icons_svg/{name}.svg"
+MIRROR_URL = "https://raw.githubusercontent.com/blender/blender/{branch}/release/datafiles/icons_svg/{name}.svg"   # same files
 BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 RSVG = shutil.which("rsvg-convert") or "/opt/homebrew/bin/rsvg-convert"
 
@@ -38,7 +39,8 @@ COLOURS = {
     "shapes": "#6fd3d9", "splines": "#6fd3d9", "text": "#6fd3d9",           # things you build from: cyan
     "generators": "#8fd36a", "volume": "#8fd36a",                         # objects that make geometry: green
     "deformers": "#a690e6", "effectors": "#a690e6",                       # objects that change others: violet
-    "moclone": "#ee9cc8", "fields": "#ee9cc8",                            # cloning and fields: pink
+    "moclone": "#ee9cc8",                                                 # cloning: pink
+    "fields": "#e8d25a",                                                  # fields: yellow
     "null": "#c8cfe8", "environment": "#c8cfe8", "camera": "#c8cfe8", "lights": "#c8cfe8",   # scene: pale lavender
     "spline_tools": "#f5b355",                                            # tool column accents: orange
     "mesh_tools": "#b3b3b3",                                              # tool column accents: grey
@@ -99,6 +101,8 @@ def ask_blender(blender):
 
 
 def svg_source(name):
+    if name in REDRAWN:
+        return REDRAWN[name]
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, name + ".svg")
     if not os.path.exists(path):
@@ -107,10 +111,15 @@ def svg_source(name):
             with urllib.request.urlopen(url, timeout=30) as r:
                 data = r.read()
         except Exception:
-            try:
-                with urllib.request.urlopen(url.replace("branch/" + BRANCH, "branch/main"), timeout=30) as r:
-                    data = r.read()
-            except Exception:
+            data = None
+            for u in (url.replace("branch/" + BRANCH, "branch/main"), MIRROR_URL.format(branch=BRANCH, name=name)):
+                try:
+                    with urllib.request.urlopen(u, timeout=30) as r:
+                        data = r.read()
+                    break
+                except Exception:
+                    pass
+            if data is None:
                 return None
         if not data.lstrip().startswith(b"<svg"):
             return None
@@ -120,7 +129,22 @@ def svg_source(name):
         return f.read()
 
 
-_WHITE = re.compile(r'(fill\s*[:=]\s*"?)(#fff(?:fff)?|white)\b', re.I)
+_WHITE = re.compile(r'((?:fill|stroke)\s*[:=]\s*"?)(#fff(?:fff)?|white)\b', re.I)
+
+
+# Icons redrawn for Blenda 4D from one of Blender's (same strokes, other proportions). Keyed by the Blender icon they
+# stand in for, so the plain Blender icon is still the fallback when no tinted copy is found.
+def _squares(sizes):
+    """Blender's STICKY_UVS_DISABLE (three scattered outline squares, 1-unit line, 0.5 corners on a 14 x 15 grid)
+    with each square its own size; `sizes` is [(x, y, side), ...] of the outer edges."""
+    rects = "".join(f'<rect x="{x + 0.5}" y="{y + 0.5}" width="{w - 1}" height="{w - 1}" rx="0.5" fill="none" '
+                    f'stroke="#fff" stroke-width="1" stroke-linejoin="round"/>' for x, y, w in sizes)
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 15" width="1400" height="1500">{rects}</svg>'
+
+
+REDRAWN = {
+    "sticky_uvs_disable": _squares([(3.4, 0.4, 4.6), (9.6, 6.8, 3.4), (0.3, 9.2, 5.4)]),   # Random: three sizes
+}
 
 
 def tint_svg(svg, colour):

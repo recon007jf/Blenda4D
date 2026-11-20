@@ -50,7 +50,8 @@ def _icon_value(name):
 
 
 def _unit():
-    return round(20 * bpy.context.preferences.system.ui_scale)
+    from . import roles
+    return roles.widget_unit()                      # Blender's row height (a tile's icon scale is counted in it)
 
 
 def _pcoll():
