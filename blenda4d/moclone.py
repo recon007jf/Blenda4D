@@ -1118,9 +1118,10 @@ def page_field(col, ob):
         if not isinstance(ob.get("b4d_fld_image"), bpy.types.Image):
             col.label(text="Pick or open an image: bright parts act, dark parts don't", icon="INFO")
     elif kind == "sound_field":
-        r = col.row(align=True)
-        r.prop(ob, '["b4d_fld_sound"]', text="Sound")
-        r.operator("blenda4d.field_sound", text="", icon="FILEBROWSER")
+        r = col.row(align=True)                       # the file is picked (and baked) by the button only
+        path = ob.get("b4d_fld_sound", "")
+        r.label(text="Sound: " + (bpy.path.basename(path) if path else "none"))
+        r.operator("blenda4d.field_sound", text="Load Sound", icon="FILEBROWSER")
         _row(col, ob, "b4d_fld_low", "Low (Hz)")
         _row(col, ob, "b4d_fld_high", "High (Hz)")
         r = col.row()
