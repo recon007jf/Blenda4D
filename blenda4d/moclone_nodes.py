@@ -22,7 +22,15 @@ import math
 
 import bpy
 
+from . import moclone_formula as formula
+
+# moclone.py fills these in: the rows inside a Group Effector / Group Field, as its lists give them
+effector_members = lambda ob: []      # noqa: E731  [(effector, kind, fields)]
+field_members = lambda ob: []         # noqa: E731  [(field, kind, blend, mix)]
+SOUND_BANDS = 16
+
 SCALE = 0.01
+GEOMETRY_TYPES = ("MESH", "CURVE", "FONT")
 COLOR_ATTR = "Clone Color"
 _ROT, _SCL = ".b4d_clone_rot", ".b4d_clone_scale"     # per-point values carried from the layout to the copies
 _CENTRE, _ISLAND, _NORMAL, _FRAME = ".b4d_piece_centre", ".b4d_piece", ".b4d_clone_n", ".b4d_trace_frame"
@@ -201,6 +209,20 @@ class G:
             n.inputs["Object"].default_value = ob
         n.inputs["As Instance"].default_value = as_instance
         return n
+
+    def capture(self, geo, values, domain="INSTANCE"):
+        """Fix field values on geo as they are now (later moves must not change them). Plain numbers pass through."""
+        cap = self.node("GeometryNodeCaptureAttribute", domain=domain)
+        self.l.new(geo, cap.inputs["Geometry"])
+        out = []
+        for i, v in enumerate(values):
+            if not hasattr(v, "is_output"):
+                out.append(v)
+                continue
+            item = cap.capture_items.new("VECTOR" if v.type == "VECTOR" else "FLOAT", f"v{i}")
+            self.l.new(v, cap.inputs[item.name])
+            out.append(cap.outputs[item.name])
+        return cap.outputs["Geometry"], out
 
     def empty(self):
         return self.node("GeometryNodeJoinGeometry").outputs[0]
@@ -456,10 +478,30 @@ def pattern(g, ob, prefix, p, which=None):
     checker.inputs["Scale"].default_value = 1.0
     checker.inputs["Color1"].default_value = (1.0, 1.0, 1.0, 1.0)
     checker.inputs["Color2"].default_value = (0.0, 0.0, 0.0, 1.0)
+    picture = g.node("GeometryNodeImageTexture", extension="CLIP", interpolation="Linear")
+    img = ob.get(prefix + "_image")
+    if isinstance(img, bpy.types.Image):
+        picture.inputs["Image"].default_value = img
+    g.l.new(g.node("GeometryNodeInputSceneTime").outputs["Frame"], picture.inputs["Frame"])
+    xs = g.sep(q)
+    g.l.new(g.xyz(g.m("ADD", xs[0], 0.5), g.m("ADD", xs[1], 0.5), 0.0), picture.inputs["Vector"])
     value = g.switch("FLOAT", which if which is not None else driven(g, ob, prefix + "_pattern"),
                      [noise.outputs["Factor"], g.clamp(cells.outputs["Distance"]), waves.outputs["Factor"],
-                      checker.outputs["Factor"]])
+                      checker.outputs["Factor"], g.m("MULTIPLY", picture.outputs["Color"], picture.outputs["Alpha"])])
     return g.clamp(g.m("ADD", g.m("MULTIPLY", g.m("SUBTRACT", value, 0.5), driven(g, ob, prefix + "_contrast", scale=0.04)), 0.5))
+
+
+_OPEN_GROUPS = set()
+
+
+def material_image(mat):
+    """The first image a material's nodes use, or None (the Material Field reads that image)."""
+    if not isinstance(mat, bpy.types.Material) or not mat.use_nodes or mat.node_tree is None:
+        return None
+    for n in mat.node_tree.nodes:
+        if n.type == "TEX_IMAGE" and n.image is not None:
+            return n.image
+    return None
 
 
 # --- fields: where an effector acts -----------------------------------------------------------------------------------
@@ -516,14 +558,58 @@ def field_weight(g, ob, kind, at):
         w = g.m("ADD", 0.5, g.m("MULTIPLY", 0.5, g.m("COSINE", g.m("MULTIPLY", phase, 2 * math.pi))))
     elif kind == "shader_field":
         w = pattern(g, ob, "b4d_fld", p)
-    elif kind == "image_field":                       # an image laid flat (looking down the Field's shown Y), Size wide
+    elif kind in ("image_field", "material_field"):   # an image (a material's own) laid flat (looking down the Field's shown Y), Size wide
         size = cm("b4d_fld_image_size")
         tex = g.node("GeometryNodeImageTexture", extension="CLIP", interpolation="Linear")
         img = ob.get("b4d_fld_image")
+        if kind == "material_field":
+            img = material_image(ob.get("b4d_fld_material"))
         if isinstance(img, bpy.types.Image):
             tex.inputs["Image"].default_value = img
         g.l.new(g.xyz(g.m("ADD", g.m("DIVIDE", x, size), 0.5), g.m("ADD", g.m("DIVIDE", y, size), 0.5), 0.0), tex.inputs["Vector"])
+        g.l.new(g.m("ADD", g.node("GeometryNodeInputSceneTime").outputs["Frame"], driven(g, ob, "b4d_fld_frame_offset")),
+                tex.inputs["Frame"])                  # a movie or image sequence plays with the scene
         w = g.clamp(g.m("MULTIPLY", tex.outputs["Color"], tex.outputs["Alpha"]))   # a colour read as a number is its brightness
+    elif kind == "formula_field":                     # the expression, in the Field's own space
+        w = g.clamp(_formula(g, ob, "b4d_fld_formula", formula_vars(g, _to_shown_cm(g, p))))
+    elif kind == "time_field":                        # everywhere, from 0 at the first frame to 1 after Duration
+        secs = g.m("DIVIDE", g.m("SUBTRACT", g.node("GeometryNodeInputSceneTime").outputs["Frame"],
+                                 bpy.context.scene.frame_start), g.m("MAXIMUM", bpy.context.scene.render.fps / bpy.context.scene.render.fps_base, 1.0))
+        w = g.clamp(g.m("DIVIDE", g.m("SUBTRACT", secs, driven(g, ob, "b4d_fld_delay")),
+                        g.m("MAXIMUM", driven(g, ob, "b4d_fld_duration"), 1e-3)))
+    elif kind == "object_field":                      # inside an object, fading out over Distance around it
+        target = ob.get("b4d_fld_object")
+        if isinstance(target, bpy.types.Object):
+            inside = inside_weight(g, target, at)
+            prox = g.node("GeometryNodeProximity", target_element="FACES")
+            real = g.node("GeometryNodeRealizeInstances")
+            g.l.new(g.info(target).outputs["Geometry"], real.inputs["Geometry"])
+            g.l.new(real.outputs[0], prox.inputs["Geometry"])
+            g.put(at, prox.inputs["Sample Position"])
+            near = g.clamp(g.m("SUBTRACT", 1.0, g.m("DIVIDE", prox.outputs["Distance"], cm("b4d_fld_distance"))))
+            w = g.m("MAXIMUM", inside, near)
+        else:
+            w = 0.0
+    elif kind == "spline_field":                      # near a spline, fading out over Radius
+        sp = ob.get("b4d_fld_spline")
+        if isinstance(sp, bpy.types.Object):
+            c2m = g.node("GeometryNodeCurveToMesh")
+            g.l.new(g.info(sp).outputs["Geometry"], c2m.inputs["Curve"])
+            prox = g.node("GeometryNodeProximity", target_element="EDGES")
+            g.l.new(c2m.outputs[0], prox.inputs["Geometry"])
+            g.put(at, prox.inputs["Sample Position"])
+            w = edge(g.m("DIVIDE", prox.outputs["Distance"], cm("b4d_fld_radius")))
+        else:
+            w = 0.0
+    elif kind == "group_field":                       # its own Fields, combined, as one
+        inner = None
+        if ob.name not in _OPEN_GROUPS and len(_OPEN_GROUPS) < 4:      # a Group inside itself is left empty
+            _OPEN_GROUPS.add(ob.name)
+            try:
+                inner = fields_weight(g, field_members(ob), at)
+            finally:
+                _OPEN_GROUPS.discard(ob.name)
+        w = inner if inner is not None else 0.0
     elif kind == "sound_field":                       # everywhere, as loud as the sound is at this frame
         w = g.clamp(g.m("MULTIPLY", driven(g, ob, "b4d_fld_level"), driven(g, ob, "b4d_fld_gain", scale=0.01)))
     else:                                             # random_field: smooth noise that can move
@@ -561,6 +647,32 @@ def fields_weight(g, fields, at):
 
 
 # --- effectors -------------------------------------------------------------------------------------------------------
+def formula_vars(g, at_shown_cm, geo=None):
+    """The names a formula can use: x y z (cm, shown axes), t (seconds), f (frame), id, count, rnd (0..1 per piece)."""
+    x, y, z = g.sep(at_shown_cm)
+    st = g.node("GeometryNodeInputSceneTime")
+    out = {"x": x, "y": y, "z": z, "t": st.outputs["Seconds"], "f": st.outputs["Frame"], "id": g.index(),
+           "rnd": g.random("FLOAT", 0.0, 1.0, 4242)}
+    out["count"] = _count(g, geo) if geo is not None else 1.0
+    return out
+
+
+FORMULA_NAMES = ("x", "y", "z", "t", "f", "id", "count", "rnd")
+
+
+def _formula(g, ob, key, variables):
+    text = str(ob.get(key, "0"))
+    if formula.check(text, FORMULA_NAMES):
+        return 0.0
+    return formula.build(g, text, variables)
+
+
+def _to_shown_cm(g, p):
+    """Blender metres to shown (Y up) centimetres."""
+    x, y, z = g.sep(p)
+    return g.xyz(g.m("MULTIPLY", x, 100.0), g.m("MULTIPLY", z, 100.0), g.m("MULTIPLY", y, 100.0))
+
+
 def _count(g, geo):
     size = g.node("GeometryNodeAttributeDomainSize", component="INSTANCES")
     g.l.new(geo, size.inputs["Geometry"])
@@ -610,6 +722,22 @@ def _weights(g, geo, ob, kind):
         return f, f, f, f
     if kind == "plain_effector":
         return 1.0, 1.0, 1.0, 1.0
+    if kind == "formula_effector":
+        w = _formula(g, ob, "b4d_eff_formula",
+                     formula_vars(g, _to_shown_cm(g, _instance_xf(g).outputs["Translation"]), geo))
+        return w, w, w, (g.clamp(w) if not isinstance(w, float) else w)
+    if kind == "sound_effector":                      # each piece listens to one band, low notes first
+        bands = [driven(g, ob, "b4d_eff_bands", i) for i in range(SOUND_BANDS)]
+        which = g.m("MINIMUM", g.m("FLOOR", g.m("DIVIDE", g.m("MULTIPLY", g.index(), SOUND_BANDS),
+                                                g.m("MAXIMUM", _count(g, geo), 1.0))), SOUND_BANDS - 1)
+        w = g.m("MULTIPLY", g.switch("FLOAT", which, bands), driven(g, ob, "b4d_eff_gain", scale=0.01))
+        return w, w, w, g.clamp(w)
+    if kind == "volume_effector":
+        vol = ob.get("b4d_eff_volume")
+        if not isinstance(vol, bpy.types.Object):
+            return 0.0, 0.0, 0.0, 0.0
+        w = inside_weight(g, vol, _instance_xf(g).outputs["Translation"])
+        return w, w, w, w
     if kind == "shader_effector":
         f = pattern(g, ob, "b4d_eff", _instance_xf(g).outputs["Translation"])
         return f, f, f, f
@@ -684,6 +812,186 @@ def _delay(g, geo, s):
     return sout.outputs["Geometry"]
 
 
+def _blend_to(g, geo, target, s, turn=True, size=True):
+    """Move each piece toward target (a transform field) by s: place always, turn and size when asked."""
+    now, to = _instance_xf(g), g.node("FunctionNodeSeparateTransform")
+    g.put(target, to.inputs[0])
+    outs = []
+    for k, dt, use in (("Translation", "VECTOR", True), ("Rotation", "ROTATION", turn), ("Scale", "VECTOR", size)):
+        if not use:
+            outs.append(now.outputs[k])
+            continue
+        mx = g.node("ShaderNodeMix", data_type=dt, clamp_factor=True)
+        g.put(s, mx.inputs[0])
+        a = {"VECTOR": 4, "ROTATION": 8}[dt]
+        g.l.new(now.outputs[k], mx.inputs[a])
+        g.l.new(to.outputs[k], mx.inputs[a + 1])
+        outs.append(mx.outputs[{"VECTOR": 1, "ROTATION": 3}[dt]])
+    comb = g.node("FunctionNodeCombineTransform")
+    for k, out in zip(("Translation", "Rotation", "Scale"), outs):
+        g.l.new(out, comb.inputs[k])
+    st = g.node("GeometryNodeSetInstanceTransform")
+    g.l.new(geo, st.inputs["Instances"])
+    g.l.new(comb.outputs[0], st.inputs["Transform"])
+    return st.outputs[0]
+
+
+def _wrapped(g, i, n):
+    return g.m("FLOORED_MODULO", i, g.m("MAXIMUM", n, 1.0))
+
+
+def _inherit(g, geo, ob, s):
+    """Each piece takes the place, turn and size of the same-numbered copy of the Source (a Matrix, a Cloner with
+    Keep Instances, or any object's points), by Strength."""
+    src = ob.get("b4d_eff_source")
+    if not isinstance(src, bpy.types.Object):
+        return geo
+    sgeo = g.info(src).outputs["Geometry"]
+    sizes = g.node("GeometryNodeAttributeDomainSize", component="INSTANCES")
+    g.l.new(sgeo, sizes.inputs["Geometry"])
+    n_inst = sizes.outputs["Instance Count"]
+    psize = g.node("GeometryNodeAttributeDomainSize", component="POINTCLOUD")
+    real = g.node("GeometryNodeRealizeInstances")
+    g.l.new(sgeo, real.inputs["Geometry"])
+    pts = g.node("GeometryNodeMeshToPoints")
+    g.l.new(real.outputs[0], pts.inputs["Mesh"])
+    g.l.new(pts.outputs[0], psize.inputs["Geometry"])
+    n_pts = psize.outputs["Point Count"]
+    xf = g.node("GeometryNodeSampleIndex", data_type="FLOAT4X4", domain="INSTANCE")
+    g.l.new(sgeo, xf.inputs["Geometry"])
+    g.l.new(g.node("GeometryNodeInstanceTransform").outputs[0], xf.inputs["Value"])
+    g.l.new(_wrapped(g, g.index(), n_inst), xf.inputs["Index"])
+    at = g.node("GeometryNodeSampleIndex", data_type="FLOAT_VECTOR", domain="POINT")
+    g.l.new(pts.outputs[0], at.inputs["Geometry"])
+    g.l.new(g.node("GeometryNodeInputPosition").outputs[0], at.inputs["Value"])
+    g.l.new(_wrapped(g, g.index(), n_pts), at.inputs["Index"])
+    now = _instance_xf(g)
+    moved = g.node("FunctionNodeCombineTransform")
+    g.l.new(at.outputs[0], moved.inputs["Translation"])
+    g.l.new(now.outputs["Rotation"], moved.inputs["Rotation"])
+    g.l.new(now.outputs["Scale"], moved.inputs["Scale"])
+    sw = g.node("GeometryNodeSwitch", input_type="MATRIX")
+    g.l.new(g.m("GREATER_THAN", n_inst, 0.5), sw.inputs["Switch"])
+    g.l.new(moved.outputs[0], sw.inputs["False"])
+    g.l.new(xf.outputs[0], sw.inputs["True"])
+    any_src = g.m("GREATER_THAN", g.m("ADD", n_inst, n_pts), 0.5)
+    return _blend_to(g, geo, sw.outputs[0], g.m("MULTIPLY", s, any_src))
+
+
+def _push_apart(g, geo, ob, s):
+    """Pieces closer than twice Radius push each other apart, a little on every pass (Iterations)."""
+    rin, rout = g.node("GeometryNodeRepeatInput"), g.node("GeometryNodeRepeatOutput")
+    rin.pair_with_output(rout)
+    g.l.new(g.m("ROUND", driven(g, ob, "b4d_eff_iterations")), rin.inputs["Iterations"])
+    g.l.new(geo, rin.inputs[1])
+    cur = rin.outputs[1]
+    p = _instance_xf(g).outputs["Translation"]
+    near = g.node("GeometryNodeIndexOfNearest")
+    g.l.new(p, near.inputs["Position"])
+    other = g.node("GeometryNodeSampleIndex", data_type="FLOAT_VECTOR", domain="INSTANCE")
+    g.l.new(cur, other.inputs["Geometry"])
+    g.l.new(p, other.inputs["Value"])
+    g.l.new(near.outputs["Index"], other.inputs["Index"])
+    jitter = g.random("FLOAT_VECTOR", (-1e-4, -1e-4, -1e-4), (1e-4, 1e-4, 1e-4), 17)
+    away = g.v("ADD", g.v("SUBTRACT", p, other.outputs[0]), jitter)
+    dist = g.v("LENGTH", away)
+    gap = g.m("MAXIMUM", g.m("SUBTRACT", driven(g, ob, "b4d_eff_radius", scale=2 * SCALE), dist), 0.0)
+    amount = g.m("MULTIPLY", g.m("MULTIPLY", gap, 0.5), g.m("MULTIPLY", s, near.outputs["Has Neighbor"]))
+    tr = g.node("GeometryNodeTranslateInstances")
+    g.l.new(cur, tr.inputs["Instances"])
+    g.l.new(g.scaled(g.v("NORMALIZE", away), amount), tr.inputs["Translation"])
+    tr.inputs["Local Space"].default_value = False
+    g.l.new(tr.outputs[0], rout.inputs[0])
+    return rout.outputs[0]
+
+
+def _spline(g, geo, ob, s):
+    """Pieces move onto the Spline, spread from Start to End (plus Offset), turning along it with Align."""
+    sp = ob.get("b4d_eff_spline")
+    if not isinstance(sp, bpy.types.Object):
+        return geo
+    curve = g.info(sp).outputs["Geometry"]
+    n = _count(g, geo)
+    start, end = driven(g, ob, "b4d_eff_start", scale=0.01), driven(g, ob, "b4d_eff_end", scale=0.01)
+    t = g.m("ADD", g.m("ADD", start, g.m("MULTIPLY", g.m("SUBTRACT", end, start),
+                                         g.m("DIVIDE", g.index(), g.m("MAXIMUM", g.m("SUBTRACT", n, 1.0), 1.0)))),
+            driven(g, ob, "b4d_eff_offset", scale=0.01))
+    t = g.m("FRACT", g.m("MULTIPLY", t, 0.999999))   # past the end wraps round to the start
+    smp = g.node("GeometryNodeSampleCurve", mode="FACTOR", use_all_curves=True)
+    g.l.new(curve, smp.inputs["Curves"])
+    g.l.new(t, smp.inputs["Factor"])
+    now = _instance_xf(g)
+    aim = g.node("FunctionNodeAlignRotationToVector", axis="X")
+    g.l.new(now.outputs["Rotation"], aim.inputs["Rotation"])
+    g.l.new(smp.outputs["Tangent"], aim.inputs["Vector"])
+    rot = g.node("ShaderNodeMix", data_type="ROTATION", clamp_factor=True)
+    g.l.new(driven(g, ob, "b4d_eff_align"), rot.inputs[0])
+    g.l.new(now.outputs["Rotation"], rot.inputs[8])
+    g.l.new(aim.outputs[0], rot.inputs[9])
+    to = g.node("FunctionNodeCombineTransform")
+    g.l.new(smp.outputs["Position"], to.inputs["Translation"])
+    g.l.new(rot.outputs[3], to.inputs["Rotation"])
+    g.l.new(now.outputs["Scale"], to.inputs["Scale"])
+    return _blend_to(g, geo, to.outputs[0], s, size=False)
+
+
+def inside_weight(g, target, at):
+    """1 where `at` is inside the mesh of `target` (an object), else 0: the nearest face's normal points away."""
+    mesh = g.info(target).outputs["Geometry"]
+    real = g.node("GeometryNodeRealizeInstances")
+    g.l.new(mesh, real.inputs["Geometry"])
+    near = g.node("GeometryNodeSampleNearestSurface", data_type="FLOAT_VECTOR")
+    g.l.new(real.outputs[0], near.inputs["Mesh"])
+    g.l.new(g.node("GeometryNodeInputNormal").outputs[0], near.inputs["Value"])
+    g.l.new(at, near.inputs["Sample Position"])
+    prox = g.node("GeometryNodeProximity", target_element="FACES")
+    g.l.new(real.outputs[0], prox.inputs["Geometry"])
+    g.l.new(at, prox.inputs["Sample Position"])
+    side = g.v("DOT_PRODUCT", g.v("SUBTRACT", at, prox.outputs["Position"]), near.outputs["Value"])
+    return g.m("LESS_THAN", side, 0.0)
+
+
+_VEL = ".b4d_velocity"
+
+
+def _spring(g, geo, ob, s):
+    """Spring: each piece is pulled toward where the earlier stages put it and overshoots, bouncing to rest; Strength
+    makes it looser, Stiffness and Damping shape the bounce."""
+    sin, sout = g.node("GeometryNodeSimulationInput"), g.node("GeometryNodeSimulationOutput")
+    sin.pair_with_output(sout)
+    g.l.new(geo, sin.inputs[0])
+    was = g.node("GeometryNodeSampleIndex", data_type="FLOAT_VECTOR", domain="INSTANCE")
+    g.l.new(sin.outputs["Geometry"], was.inputs["Geometry"])
+    g.l.new(_instance_xf(g).outputs["Translation"], was.inputs["Value"])
+    g.l.new(g.index(), was.inputs["Index"])
+    vel = g.node("GeometryNodeSampleIndex", data_type="FLOAT_VECTOR", domain="INSTANCE")
+    g.l.new(sin.outputs["Geometry"], vel.inputs["Geometry"])
+    g.l.new(g.named(_VEL, "FLOAT_VECTOR"), vel.inputs["Value"])
+    g.l.new(g.index(), vel.inputs["Index"])
+    dt = g.m("MINIMUM", sin.outputs["Delta Time"], 0.1)
+    target = _instance_xf(g).outputs["Translation"]
+    k = g.m("MULTIPLY", driven(g, ob, "b4d_eff_stiffness", scale=4.0), g.m("SUBTRACT", 1.05, g.m("MULTIPLY", s, 0.95)))
+    pull = g.scaled(g.v("SUBTRACT", target, was.outputs[0]), g.m("MULTIPLY", k, dt))
+    damp = g.m("MAXIMUM", g.m("SUBTRACT", 1.0, g.m("MULTIPLY", driven(g, ob, "b4d_eff_damping", scale=0.01), g.m("MULTIPLY", dt, 8.0))), 0.0)
+    v = g.v("ADD", g.scaled(vel.outputs[0], damp), pull)
+    moved = g.v("ADD", was.outputs[0], g.scaled(v, dt))
+    first = g.m("LESS_THAN", sin.outputs["Delta Time"], 1e-6)      # the first frame: start where they are
+    pos = g.node("GeometryNodeSwitch", input_type="VECTOR")
+    g.l.new(first, pos.inputs["Switch"])
+    g.l.new(moved, pos.inputs["False"])
+    g.l.new(target, pos.inputs["True"])
+    comb = g.node("FunctionNodeCombineTransform")
+    now = _instance_xf(g)
+    g.l.new(pos.outputs[0], comb.inputs["Translation"])
+    g.l.new(now.outputs["Rotation"], comb.inputs["Rotation"])
+    g.l.new(now.outputs["Scale"], comb.inputs["Scale"])
+    st = g.node("GeometryNodeSetInstanceTransform")     # the velocity is stored first: read where the pieces were
+    g.l.new(g.store(geo, _VEL, v, "FLOAT_VECTOR", "INSTANCE"), st.inputs["Instances"])
+    g.l.new(comb.outputs[0], st.inputs["Transform"])
+    g.l.new(st.outputs[0], sout.inputs["Geometry"])
+    return g.drop_attrs(sout.outputs["Geometry"], _VEL)
+
+
 _NOW, _KEPT = ".b4d_fields_now", ".b4d_fields_kept"
 
 
@@ -705,14 +1013,33 @@ def _remember(g, geo, fw, mode, ob):
     return sout.outputs["Geometry"], g.named(_KEPT, "FLOAT")
 
 
-def effector_stage(g, geo, ob, kind, fields):
-    """Change the pieces in geo by one effector, limited to where its Fields reach."""
-    out = _stage(g, geo, ob, kind, fields)
+_GROUP = ".b4d_group_{}"
+
+
+def effector_stage(g, geo, ob, kind, fields, scale=None, depth=0):
+    """Change the pieces in geo by one effector, limited to where its Fields reach (and by `scale`, from a Group)."""
+    if kind == "group_effector":
+        if depth > 4:
+            return geo
+        w = strength(g, ob, "b4d_eff_strength")
+        fw = fields_weight(g, fields, _instance_xf(g).outputs["Translation"])
+        if fw is not None:
+            w = g.m("MULTIPLY", w, fw)
+        if scale is not None:
+            w = g.m("MULTIPLY", w, scale)
+        name = _GROUP.format(depth)
+        geo = g.store(geo, name, w, "FLOAT", "INSTANCE")     # fixed now: the members move the pieces
+        for m, mk, mfields in effector_members(ob):
+            geo = effector_stage(g, geo, m, mk, mfields, g.named(name, "FLOAT"), depth + 1)
+        return g.drop_attrs(geo, name)
+    out = _stage(g, geo, ob, kind, fields, scale)
     return g.drop_attrs(out, _NOW, _KEPT) if fields and int(ob.get("b4d_eff_memory", 0)) else out
 
 
-def _stage(g, geo, ob, kind, fields):
+def _stage(g, geo, ob, kind, fields, scale=None):
     s = strength(g, ob, "b4d_eff_strength")
+    if scale is not None:
+        s = g.m("MULTIPLY", s, scale)
     fw = fields_weight(g, fields, _instance_xf(g).outputs["Translation"])
     if fw is not None:
         mode = int(ob.get("b4d_eff_memory", 0))
@@ -722,8 +1049,15 @@ def _stage(g, geo, ob, kind, fields):
     if kind == "target_effector":
         return _target(g, geo, ob, s)
     if kind == "delay_effector":
-        return _delay(g, geo, s)
+        return _spring(g, geo, ob, s) if int(ob.get("b4d_eff_delay_mode", 0)) == 1 else _delay(g, geo, s)
+    if kind == "inheritance_effector":
+        return _inherit(g, geo, ob, s)
+    if kind == "push_apart_effector":
+        return _push_apart(g, geo, ob, s)
+    if kind == "spline_effector":
+        return _spline(g, geo, ob, s)
     wp, wr, ws, wc = _weights(g, geo, ob, kind)
+    geo, (s, wp, wr, ws, wc) = g.capture(geo, [s, wp, wr, ws, wc])    # read where the pieces are before this moves them
     pos = g.scaled(_vec_mul(g, _shown_vec(g, ob, "b4d_eff_position", SCALE), wp), s)
     rot = g.scaled(_vec_mul(g, _shown_vec(g, ob, "b4d_eff_rotation", 1.0), wr), s)
     size = g.scaled(_vec_mul(g, _shown_vec(g, ob, "b4d_eff_scale", 0.01), ws), s)
@@ -743,14 +1077,32 @@ def _stage(g, geo, ob, kind, fields):
     out = sc.outputs[0]
     if wc is None:
         return out
-    amount = g.m("MULTIPLY", g.m("MULTIPLY", wc, s), driven(g, ob, "b4d_eff_use_color"))
+    use = driven(g, ob, "b4d_eff_use_color")
+    gradient = int(ob.get("b4d_eff_color_mode", 0)) == 1
+    if gradient:                                      # Color to Color 2: by the effect's own amount, or along the copies
+        along = g.m("DIVIDE", g.index(), g.m("MAXIMUM", g.m("SUBTRACT", _count(g, geo), 1.0), 1.0))
+        at = along if isinstance(wc, (int, float)) else g.clamp(wc)
+        amount = g.m("MULTIPLY", s, use)
+    else:
+        amount = g.m("MULTIPLY", g.m("MULTIPLY", wc, s), use)
     tint = g.node("FunctionNodeCombineColor")
     for i in range(3):
         g.l.new(driven(g, ob, "b4d_eff_color", i), tint.inputs[i])
+    if gradient:
+        tint2 = g.node("FunctionNodeCombineColor")
+        for i in range(3):
+            g.l.new(driven(g, ob, "b4d_eff_color2", i), tint2.inputs[i])
+        ramp = g.node("ShaderNodeMix", data_type="RGBA", clamp_factor=True)
+        g.l.new(at, ramp.inputs[0])
+        g.l.new(tint.outputs[0], ramp.inputs[6])
+        g.l.new(tint2.outputs[0], ramp.inputs[7])
+        tint_out = ramp.outputs[2]
+    else:
+        tint_out = tint.outputs[0]
     mix = g.node("ShaderNodeMix", data_type="RGBA", clamp_factor=True)
     g.l.new(amount, mix.inputs[0])
     g.l.new(g.named(COLOR_ATTR, "FLOAT_COLOR"), mix.inputs[6])     # the colour A and B sockets
-    g.l.new(tint.outputs[0], mix.inputs[7])
+    g.l.new(tint_out, mix.inputs[7])
     return g.store(out, COLOR_ATTR, mix.outputs[2], "FLOAT_COLOR", "INSTANCE")
 
 
@@ -828,7 +1180,11 @@ def make_group(name, kind, kids, effectors, owner):
         for child in reversed(kids):
             info = g.info(child)
             home = g.node("GeometryNodeTransform")
-            g.l.new(info.outputs["Geometry"], home.inputs["Geometry"])
+            if child.type == "EMPTY":                 # a Null: everything under it, as one piece at the Null's origin
+                parts = [g.info(d).outputs["Geometry"] for d in child.children_recursive if d.type in GEOMETRY_TYPES]
+                g.l.new(g.join(parts), home.inputs["Geometry"])
+            else:
+                g.l.new(info.outputs["Geometry"], home.inputs["Geometry"])
             g.l.new(g.scaled(info.outputs["Location"], -1.0), home.inputs["Translation"])
             g.l.new(home.outputs[0], gti.inputs[0])
         order = g.switch("INT", o["Clone Order"], [g.index(), g.random("INT", 0, 1000000, o["Seed"])])

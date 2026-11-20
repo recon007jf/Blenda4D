@@ -66,9 +66,23 @@ EFFECTORS = {
                         {"b4d_eff_position": (0.0, 100.0, 0.0), "b4d_eff_contrast": 100.0}),
     "wave_effector": ("Wave Effector", "FORCE_HARMONIC", "Move, turn and size the pieces back and forth in a wave over time and along the copies",
                       {"b4d_eff_position": (0.0, 50.0, 0.0)}),
+    "inheritance_effector": ("Inheritance Effector", "CON_CHILDOF",
+                             "Move the pieces to the places of another Cloner's or Matrix's copies, one for one", {}),
+    "push_apart_effector": ("Push Apart Effector", "ARROW_LEFTRIGHT", "Push pieces that are too close apart so they don't overlap",
+                            {"b4d_eff_radius": 75.0}),
+    "spline_effector": ("Spline Effector", "CON_FOLLOWPATH", "Move the pieces onto a spline, spread along it", {}),
+    "volume_effector": ("Volume Effector", "CUBE", "Move, turn, size and tint the pieces that are inside another object",
+                        {"b4d_eff_position": (0.0, 100.0, 0.0)}),
+    "formula_effector": ("Formula Effector", "CON_TRANSFORM", "Move, turn, size and tint the pieces by a formula you type",
+                         {"b4d_eff_position": (0.0, 50.0, 0.0)}),
+    "sound_effector": ("Sound Effector", "OUTLINER_DATA_SPEAKER",
+                       "Move, turn, size and tint the pieces by a sound: each piece follows one band, low notes first",
+                       {"b4d_eff_position": (0.0, 100.0, 0.0)}),
+    "group_effector": ("Group Effector", "GROUP", "Hold other effectors, with one Strength and one set of Fields for all of them", {}),
 }
 EFFECTOR_ORDER = ("random_effector", "plain_effector", "shader_effector", "delay_effector", "wave_effector",
-                  "step_effector", "target_effector", "time_effector")
+                  "step_effector", "target_effector", "time_effector", "inheritance_effector", "push_apart_effector",
+                  "spline_effector", "volume_effector", "formula_effector", "sound_effector", "group_effector")
 
 # field kind -> (label, icon, tooltip, starting values)
 FIELDS = {
@@ -86,9 +100,16 @@ FIELDS = {
     "wave_field": ("Wave Field", "MOD_WAVE", "Let an effector act in rings going out from this Field", {}),
     "image_field": ("Image Field", "IMAGE_DATA", "Let an effector act by the brightness of an image laid flat under this Field", {}),
     "sound_field": ("Sound Field", "OUTLINER_DATA_SPEAKER", "Let an effector act as strongly as a sound is loud at each frame", {}),
+    "formula_field": ("Formula Field", "CON_TRANSFORM", "Let an effector act by a formula you type, from the place, time and piece", {}),
+    "time_field": ("Time Field", "PREVIEW_RANGE", "Let an effector grow from nothing to full strength as the animation plays", {}),
+    "object_field": ("Object Field", "MESH_ICOSPHERE", "Let an effector act inside another object, fading out around it", {}),
+    "spline_field": ("Spline Field", "CON_FOLLOWPATH", "Let an effector act near a spline, fading out over Radius", {}),
+    "material_field": ("Material Field", "MATERIAL", "Let an effector act by the image a material uses, laid flat under this Field", {}),
+    "group_field": ("Group Field", "GROUP", "Hold other Fields, combined, with one Strength for all of them", {}),
 }
 FIELD_ORDER = ("linear_field", "spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field",
-               "torus_field", "radial_field", "random_field", "shader_field", "wave_field", "image_field", "sound_field")
+               "torus_field", "radial_field", "random_field", "shader_field", "wave_field", "image_field", "sound_field",
+               "formula_field", "time_field", "object_field", "spline_field", "material_field", "group_field")
 
 # setting -> (default, how the field shows)
 SETTINGS = {
@@ -102,6 +123,45 @@ SETTINGS = {
     "b4d_eff_use_color": (False, dict(description="Tint the pieces; a material shows it through an Attribute node "
                                                   f"reading \"{mn.COLOR_ATTR}\"")),
     "b4d_eff_color": ((1.0, 0.25, 0.05), dict(subtype="COLOR", min=0.0, max=1.0, description="The tint")),
+    "b4d_eff_color_mode": (0, None),
+    "b4d_eff_color2": ((0.05, 0.35, 1.0), dict(subtype="COLOR", min=0.0, max=1.0,
+                                             description="The other end of the gradient")),
+    "b4d_eff_source": (None, None),
+    "b4d_eff_spline": (None, None),
+    "b4d_eff_volume": (None, None),
+    "b4d_eff_radius": (50.0, dict(min=0.0, soft_max=10000.0, precision=1, step=100,
+                                  description="How much room each piece keeps around it (cm)")),
+    "b4d_eff_iterations": (5, dict(min=1, max=100, description="How many passes it makes; more passes untangle crowds better")),
+    "b4d_eff_start": (0.0, dict(subtype="PERCENTAGE", soft_min=0.0, soft_max=100.0, precision=1,
+                                description="Where along the spline the first piece goes")),
+    "b4d_eff_end": (100.0, dict(subtype="PERCENTAGE", soft_min=0.0, soft_max=100.0, precision=1,
+                                description="Where along the spline the last piece goes")),
+    "b4d_eff_offset": (0.0, dict(subtype="PERCENTAGE", soft_min=-100.0, soft_max=100.0, precision=1,
+                                 description="Slide all pieces along the spline (they wrap round past the end)")),
+    "b4d_eff_align": (True, dict(description="Turn the pieces so their X axis follows the spline")),
+    "b4d_eff_formula": ("sin(t * 2 + id * 0.5)", dict(description="The amount for each piece: x y z (cm), t (seconds), f (frame), "
+                                                             "id, count, rnd; + - * / ** and sin cos abs min max fract clamp ...")),
+    "b4d_eff_sound": ("", dict(subtype="FILE_PATH", description="The sound file the pieces follow")),
+    "b4d_eff_low": (40.0, dict(min=1.0, max=20000.0, precision=0, description="The lowest band starts here (Hz); bake again after changing it")),
+    "b4d_eff_high": (12000.0, dict(min=1.0, max=20000.0, precision=0, description="The highest band ends here (Hz); bake again after changing it")),
+    "b4d_eff_gain": (100.0, dict(subtype="PERCENTAGE", min=0.0, soft_max=400.0, precision=1, description="Turn the sound up or down")),
+    "b4d_eff_bands": (tuple([0.0] * mn.SOUND_BANDS), dict(min=0.0, max=1.0, description="How loud each band is at this frame (baked)")),
+    "b4d_eff_delay_mode": (0, None),
+    "b4d_eff_stiffness": (60.0, dict(min=0.1, soft_max=500.0, precision=1, description="How hard the spring pulls the pieces back")),
+    "b4d_eff_damping": (30.0, dict(subtype="PERCENTAGE", min=0.0, max=100.0, precision=1, description="How fast the bouncing dies down")),
+    "b4d_eff_image": (None, None),
+    "b4d_fld_formula": ("0.5 + 0.5 * sin(x / 50 + t * 2)", dict(description="The reach at each place, 0 to 1: x y z (cm, in the Field's "
+                                                                       "space), t (seconds), f (frame), id, rnd")),
+    "b4d_fld_duration": (2.0, dict(min=0.0, soft_max=60.0, precision=2, subtype="TIME_ABSOLUTE",
+                                   description="How long it takes to reach full strength (seconds)")),
+    "b4d_fld_delay": (0.0, dict(min=0.0, soft_max=60.0, precision=2, subtype="TIME_ABSOLUTE",
+                                description="How long it waits after the first frame before it starts (seconds)")),
+    "b4d_fld_object": (None, None),
+    "b4d_fld_distance": (100.0, dict(min=0.0, soft_max=10000.0, precision=1, step=100,
+                                     description="How far outside the object the effect fades out (cm)")),
+    "b4d_fld_spline": (None, None),
+    "b4d_fld_material": (None, None),
+    "b4d_fld_frame_offset": (0, dict(soft_min=-1000, soft_max=1000, description="Start a movie or image sequence this many frames later")),
     "b4d_eff_seed": (0, dict(min=0, max=1000000, description="Pick a different random pattern")),
     "b4d_fld_strength": (100.0, dict(subtype="PERCENTAGE", min=0.0, soft_max=100.0, precision=1,
                                      description="How much of its effectors' strength this Field lets through")),
@@ -154,8 +214,8 @@ SETTINGS = {
     "b4d_vor_seed": (0, dict(min=0, max=100000, description="Place the cuts differently")),
 }
 _MOVE = ("b4d_eff_strength", "b4d_eff_position", "b4d_eff_rotation", "b4d_eff_scale")
-_TINT = ("b4d_eff_use_color", "b4d_eff_color")
-_PATTERN = ("b4d_eff_pattern", "b4d_eff_noise_size", "b4d_eff_contrast", "b4d_eff_speed", "b4d_eff_seed")
+_TINT = ("b4d_eff_use_color", "b4d_eff_color", "b4d_eff_color_mode", "b4d_eff_color2")
+_PATTERN = ("b4d_eff_pattern", "b4d_eff_noise_size", "b4d_eff_contrast", "b4d_eff_speed", "b4d_eff_seed", "b4d_eff_image")
 _F = ("b4d_fld_strength", "b4d_fld_invert")
 _MEMORY = ("b4d_eff_memory", "b4d_eff_fade")
 KIND_SETTINGS = {
@@ -163,10 +223,17 @@ KIND_SETTINGS = {
     "shader_effector": _MOVE + _TINT + _PATTERN,
     "wave_effector": _MOVE + _TINT + ("b4d_eff_wave_shape", "b4d_eff_frequency", "b4d_eff_spread"),
     "plain_effector": _MOVE + _TINT,
-    "delay_effector": ("b4d_eff_strength",),
+    "delay_effector": ("b4d_eff_strength", "b4d_eff_delay_mode", "b4d_eff_stiffness", "b4d_eff_damping"),
     "step_effector": _MOVE + _TINT,
     "target_effector": ("b4d_eff_strength", "b4d_eff_upright"),
     "time_effector": _MOVE,
+    "inheritance_effector": ("b4d_eff_strength", "b4d_eff_source"),
+    "push_apart_effector": ("b4d_eff_strength", "b4d_eff_radius", "b4d_eff_iterations"),
+    "spline_effector": ("b4d_eff_strength", "b4d_eff_spline", "b4d_eff_start", "b4d_eff_end", "b4d_eff_offset", "b4d_eff_align"),
+    "volume_effector": _MOVE + _TINT + ("b4d_eff_volume",),
+    "formula_effector": _MOVE + _TINT + ("b4d_eff_formula",),
+    "sound_effector": _MOVE + _TINT + ("b4d_eff_sound", "b4d_eff_low", "b4d_eff_high", "b4d_eff_gain", "b4d_eff_bands"),
+    "group_effector": ("b4d_eff_strength",),
     "linear_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_length", "b4d_fld_falloff"),
     "spherical_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_radius", "b4d_fld_falloff"),
     "box_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_size", "b4d_fld_falloff"),
@@ -176,9 +243,16 @@ KIND_SETTINGS = {
     "cone_field": _F + ("b4d_fld_radius", "b4d_fld_height", "b4d_fld_falloff"),
     "torus_field": _F + ("b4d_fld_radius", "b4d_fld_tube", "b4d_fld_falloff"),
     "radial_field": _F + ("b4d_fld_sweep", "b4d_fld_falloff"),
-    "shader_field": _F + ("b4d_fld_pattern", "b4d_fld_noise_size", "b4d_fld_seed", "b4d_fld_speed", "b4d_fld_contrast", "b4d_fld_falloff"),
+    "shader_field": _F + ("b4d_fld_pattern", "b4d_fld_noise_size", "b4d_fld_seed", "b4d_fld_speed", "b4d_fld_contrast",
+                          "b4d_fld_image", "b4d_fld_falloff"),
     "wave_field": _F + ("b4d_fld_wavelength", "b4d_fld_speed", "b4d_fld_falloff"),
-    "image_field": _F + ("b4d_fld_image", "b4d_fld_image_size", "b4d_fld_falloff"),
+    "image_field": _F + ("b4d_fld_image", "b4d_fld_image_size", "b4d_fld_frame_offset", "b4d_fld_falloff"),
+    "material_field": _F + ("b4d_fld_material", "b4d_fld_image_size", "b4d_fld_frame_offset", "b4d_fld_falloff"),
+    "formula_field": _F + ("b4d_fld_formula", "b4d_fld_falloff"),
+    "time_field": _F + ("b4d_fld_duration", "b4d_fld_delay", "b4d_fld_falloff"),
+    "object_field": _F + ("b4d_fld_object", "b4d_fld_distance", "b4d_fld_falloff"),
+    "spline_field": _F + ("b4d_fld_spline", "b4d_fld_radius", "b4d_fld_falloff"),
+    "group_field": _F + ("b4d_fld_falloff",),
     "sound_field": _F + ("b4d_fld_sound", "b4d_fld_low", "b4d_fld_high", "b4d_fld_level", "b4d_fld_gain", "b4d_fld_falloff"),
     "voronoi_fracture": ("b4d_vor_count", "b4d_vor_seed"),
 }
@@ -219,8 +293,24 @@ def kids_of(ob):
     k = object_kind(ob)
     if k not in USES_CHILDREN:
         return []
-    types = ("MESH",) if k == "voronoi_fracture" else ("MESH", "CURVE", "FONT")
-    return [c for c in sorted(ob.children, key=lambda c: c.name) if c.type in types and kind_of(c) is None]
+    types = ("MESH",) if k == "voronoi_fracture" else mn.GEOMETRY_TYPES
+    return [c for c in sorted(ob.children, key=lambda c: c.name) if kind_of(c) is None and (
+        c.type in types or (k == "cloner" and c.type == "EMPTY" and _null_parts(c)))]
+
+
+def _null_parts(null):
+    """The objects with geometry anywhere under a Null (a Cloner copies them together as one clone)."""
+    return [d for d in null.children_recursive if d.type in mn.GEOMETRY_TYPES and kind_of(d) is None]
+
+
+def copied_objects(ob):
+    """Everything a MoClone object uses: its children, and what is under its Nulls."""
+    out = []
+    for c in kids_of(ob):
+        out.append(c)
+        if c.type == "EMPTY":
+            out += _null_parts(c)
+    return out
 
 
 def _listed(ob, prop, kind_fn):
@@ -231,6 +321,18 @@ def _listed(ob, prop, kind_fn):
         if k is not None and link.use and o.name in bpy.data.objects and all(o != x[0] for x in out):
             out.append((o, k, getattr(link, "blend", "MAX"), round(getattr(link, "mix", 100.0), 3)))
     return out
+
+
+def _members_eff(ob):
+    return [(e, k, fields_of(e)) for e, k in effectors_of(ob) if e != ob]
+
+
+def _members_fld(ob):
+    return [x for x in fields_of(ob) if x[0] != ob]
+
+
+mn.effector_members = _members_eff
+mn.field_members = _members_fld
 
 
 def fields_of(effector):
@@ -244,6 +346,22 @@ def effectors_of(ob):
     return [(o, k) for o, k, _b, _m in _listed(ob, "b4d_effectors", effector_kind)]
 
 
+POINTERS = {
+    "b4d_fld_image": ("IMAGE", "The image whose brightness says where to act"),
+    "b4d_eff_source": ("OBJECT", "The Matrix, Cloner (with Keep Instances) or object whose copies or points the pieces take"),
+    "b4d_eff_spline": ("OBJECT", "The spline the pieces move onto"),
+    "b4d_eff_volume": ("OBJECT", "The object whose inside the effector acts in"),
+    "b4d_eff_image": ("IMAGE", "The image whose brightness moves the pieces (pattern Image)"),
+    "b4d_fld_object": ("OBJECT", "The object whose inside the Field reaches"),
+    "b4d_fld_spline": ("OBJECT", "The spline the Field follows"),
+    "b4d_fld_material": ("MATERIAL", "The material whose image the Field reads"),
+}
+
+
+def _picked(ob):
+    return ",".join(getattr(ob.get(k), "name", "") for k in POINTERS if k in ob)
+
+
 def stamp(ob, kind, start=None):
     """Give the object every setting its kind reads (a missing one would break the drivers)."""
     if "_b4d_enabled" not in ob:
@@ -252,10 +370,10 @@ def stamp(ob, kind, start=None):
         if key in ob:
             continue
         default, ui = SETTINGS[key]
-        if key == "b4d_fld_image":                    # an image picked from the file's images
+        if key in POINTERS:                           # a data-block picked from the file
             ob[key] = None
             try:
-                ob.id_properties_ui(key).update(id_type="IMAGE", description="The image whose brightness says where to act")
+                ob.id_properties_ui(key).update(id_type=POINTERS[key][0], description=POINTERS[key][1])
             except (TypeError, KeyError):
                 pass
             continue
@@ -302,12 +420,31 @@ def _effector_list(ob):
     return [(e, k, fields_of(e)) for e, k in effectors_of(ob)]
 
 
+def _describe_fields(fl, depth=0):
+    out = []
+    for f, fk, b, m in fl:
+        part = f"{f.name}/{b}/{m}/{_picked(f)}/{f.get('b4d_fld_formula', '') if fk == 'formula_field' else ''}"
+        if fk == "group_field" and depth < 4:
+            part += "(" + _describe_fields(_members_fld(f), depth + 1) + ")"
+        out.append(part)
+    return ",".join(out)
+
+
+def _describe_effectors(lst, depth=0):
+    out = []
+    for e, ek, fl in lst:
+        part = (f"{e.name}:{ek}:{e.get('b4d_eff_memory', 0)}:{e.get('b4d_eff_color_mode', 0)}:{e.get('b4d_eff_delay_mode', 0)}:"
+                f"{_picked(e)}:{e.get('b4d_eff_formula', '') if ek == 'formula_effector' else ''}:" + _describe_fields(fl))
+        if ek == "group_effector" and depth < 4:
+            part += "{" + _describe_effectors(_members_eff(e), depth + 1) + "}"
+        out.append(part)
+    return ";".join(out)
+
+
 def _signature(ob):
     k = object_kind(ob)
-    parts = [ob.name, k, ",".join(c.name for c in kids_of(ob)),
-             ";".join(f"{e.name}:{ek}:{e.get('b4d_eff_memory', 0)}:" +
-                      ",".join(f"{f.name}/{b}/{m}/{getattr(f.get('b4d_fld_image'), 'name', '')}" for f, _fk, b, m in fl)
-                      for e, ek, fl in _effector_list(ob))]
+    parts = [ob.name, k, ",".join(c.name for c in copied_objects(ob)),
+             _describe_effectors(_effector_list(ob))]
     if k == "voronoi_fracture":
         parts.append(f"{ob.get('b4d_vor_count')}:{ob.get('b4d_vor_seed')}")
         for c in kids_of(ob):
@@ -468,7 +605,11 @@ def _field_display(ob, kind):
             "random_field": ("SPHERE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE),
             "shader_field": ("CUBE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE),
             "image_field": ("CUBE", ob.get("b4d_fld_image_size", 400.0) * 0.5 * mn.SCALE),
-            "sound_field": ("SPHERE", 0.3)}[kind]
+            "sound_field": ("SPHERE", 0.3),
+            "material_field": ("CUBE", ob.get("b4d_fld_image_size", 400.0) * 0.5 * mn.SCALE),
+            "formula_field": ("PLAIN_AXES", 0.5), "time_field": ("SPHERE", 0.3), "group_field": ("PLAIN_AXES", 0.5),
+            "object_field": ("PLAIN_AXES", 0.5),
+            "spline_field": ("SPHERE", ob.get("b4d_fld_radius", 200.0) * mn.SCALE)}[kind]
     if ob.empty_display_type != want[0]:
         ob.empty_display_type = want[0]
     if abs(ob.empty_display_size - want[1]) > 1e-6:
@@ -478,7 +619,8 @@ def _field_display(ob, kind):
 def _restart_trailing(ob):
     """A Delay Effector remembers past frames; when its settings change, that memory is dropped so the trailing is
     worked out again with the new values (Blender would otherwise keep showing the old frames)."""
-    key = ";".join(f"{e.name}:{e.get('b4d_eff_strength')}:{e.get('b4d_eff_fade')}:{enabled(e)}:" +
+    key = ";".join(f"{e.name}:{e.get('b4d_eff_strength')}:{e.get('b4d_eff_fade')}:{enabled(e)}:{e.get('b4d_eff_delay_mode')}:"
+                   f"{e.get('b4d_eff_stiffness')}:{e.get('b4d_eff_damping')}:" +
                    ",".join(f"{f.name}/{b}/{m}" for f, _k, b, m in fl)
                    for e, k, fl in _effector_list(ob) if k == "delay_effector" or (fl and e.get("b4d_eff_memory")))
     if ob.get("b4d_delay_key", "") == key:
@@ -514,9 +656,10 @@ def sync(scene):
             if k in WITH_EFFECTORS:
                 _restart_trailing(ob)
             if enabled(ob):
-                for c in kids_of(ob):
+                for c in copied_objects(ob):
                     keep.add(c.name)
-                    _consume(c)
+                    if c.type != "EMPTY":
+                        _consume(c)
         for ob in scene.objects:
             if CONSUMED in ob and ob.name not in keep:
                 _release(ob)
@@ -589,7 +732,7 @@ def _make_null(context, kind, label, start):
 
 def create_effector(context, kind):
     label, _icon, _tip, start = EFFECTORS[kind]
-    owners = [o for o in context.selected_objects if object_kind(o) in WITH_EFFECTORS]
+    owners = [o for o in context.selected_objects if object_kind(o) in WITH_EFFECTORS or effector_kind(o) == "group_effector"]
     ob = _make_null(context, kind, label, start)
     if kind == "target_effector":
         ob.empty_display_type = "SPHERE"
@@ -607,7 +750,7 @@ def create_effector(context, kind):
 
 def create_field(context, kind):
     label, _icon, _tip, start = FIELDS[kind]
-    owners = [o for o in context.selected_objects if effector_kind(o) is not None]
+    owners = [o for o in context.selected_objects if effector_kind(o) is not None or field_kind(o) == "group_field"]
     ob = _make_null(context, kind, label, start)
     ob.location = owners[0].matrix_world.translation if owners else context.scene.cursor.location
     for e in owners:
@@ -724,29 +867,95 @@ def _field_of(context, kind):
 class BLENDA4D_OT_field_image(bpy.types.Operator):
     bl_idname = "blenda4d.field_image"
     bl_label = "Open Image"
-    bl_description = "Pick an image file for this Image Field"
+    bl_description = "Open an image (or a movie or image sequence) from disk for this object"
     bl_options = {"REGISTER", "UNDO"}
     filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    key: bpy.props.StringProperty(default="b4d_fld_image", options={"HIDDEN", "SKIP_SAVE"})
+    filter_movie: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
     filter_image: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
     filter_folder: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
 
     @classmethod
     def poll(cls, context):
-        return _field_of(context, "image_field") is not None
+        return kind_of(context.view_layer.objects.active) is not None
 
     def invoke(self, context, event):
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
+        ob = context.view_layer.objects.active
+        if self.key not in ob:
+            return {"CANCELLED"}
         try:
             img = bpy.data.images.load(self.filepath, check_existing=True)
         except RuntimeError as ex:
             self.report({"ERROR"}, f"Could not open the image: {ex}")
             return {"CANCELLED"}
-        _field_of(context, "image_field")["b4d_fld_image"] = img
+        ob[self.key] = img
         sync_all()
         return {"FINISHED"}
+
+
+def _levels(snd, rate, fps, low, high):
+    """Loudness per frame of `snd`, filtered to low..high (Hz): the frame's average level, a full-scale tone is 1."""
+    if low > 20.0:
+        snd = snd.highpass(low)
+    if high < min(20000.0, rate / 2):
+        snd = snd.lowpass(high)
+    data = snd.data()
+    mono = data.mean(axis=1) if data.ndim > 1 else data
+    per = rate / fps
+    frames = max(1, int(len(mono) / per))
+    out = []
+    for i in range(frames):
+        part = mono[int(i * per):int((i + 1) * per)]
+        rms = float((part.astype("float64") ** 2).mean() ** 0.5) if len(part) else 0.0
+        out.append(min(1.0, rms / 0.7071))
+    return out
+
+
+def _bake_keys(ob, key, index, start, values):
+    """One constant keyframe per frame on ob[key] (index for an array setting)."""
+    from bpy_extras import anim_utils
+    if index is None:
+        ob[key] = values[0]
+        ob.keyframe_insert(f'["{key}"]', frame=start)
+    else:
+        ob[key][index] = values[0]
+        ob.keyframe_insert(f'["{key}"]', index=index, frame=start)
+    ad = ob.animation_data
+    bag = anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot)
+    fc = next(f for f in bag.fcurves if f.data_path == f'["{key}"]' and (index is None or f.array_index == index))
+    fc.keyframe_points.clear()
+    fc.keyframe_points.add(len(values))
+    co = []
+    for i, v in enumerate(values):
+        co += [start + i, v]
+    fc.keyframe_points.foreach_set("co", co)
+    fc.keyframe_points.foreach_set("interpolation", [0] * len(values))      # constant: one value per frame
+    fc.update()
+
+
+def bake_bands(ob, scene):
+    """Sound Effector: split the sound into bands from Low to High (evenly on a musical scale) and bake each band's
+    loudness per frame into the effector's Bands, as keyframes."""
+    import aud
+    path = bpy.path.abspath(ob.get("b4d_eff_sound", ""))
+    snd = aud.Sound(path)
+    rate = float(snd.specs[0])
+    fps = scene.render.fps / scene.render.fps_base
+    low, high = float(ob.get("b4d_eff_low", 40.0)), float(ob.get("b4d_eff_high", 12000.0))
+    high = max(high, low * 1.01)
+    n = mn.SOUND_BANDS
+    edges = [low * (high / low) ** (i / n) for i in range(n + 1)]
+    frames = 0
+    for i in range(n):
+        values = [min(1.0, v * 2.0) for v in _levels(snd, rate, fps, edges[i], edges[i + 1])]  # bands are quieter
+        _bake_keys(ob, "b4d_eff_bands", i, scene.frame_start, values)
+        frames = len(values)
+    ob.update_tag()
+    return frames
 
 
 def bake_sound(ob, scene):
@@ -755,36 +964,9 @@ def bake_sound(ob, scene):
     import aud
     path = bpy.path.abspath(ob.get("b4d_fld_sound", ""))
     snd = aud.Sound(path)
-    rate = float(snd.specs[0])
-    low, high = float(ob.get("b4d_fld_low", 20.0)), float(ob.get("b4d_fld_high", 20000.0))
-    if low > 20.0:
-        snd = snd.highpass(low)
-    if high < min(20000.0, rate / 2):
-        snd = snd.lowpass(high)
-    data = snd.data()
-    mono = data.mean(axis=1) if data.ndim > 1 else data
-    fps = scene.render.fps / scene.render.fps_base
-    per = rate / fps
-    frames = max(1, int(len(mono) / per))
-    levels = []
-    for i in range(frames):
-        part = mono[int(i * per):int((i + 1) * per)]
-        rms = float((part.astype("float64") ** 2).mean() ** 0.5) if len(part) else 0.0
-        levels.append(min(1.0, rms / 0.7071))
-    from bpy_extras import anim_utils
-    ob["b4d_fld_level"] = levels[0]
-    ob.keyframe_insert('["b4d_fld_level"]', frame=scene.frame_start)
-    ad = ob.animation_data
-    bag = anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot)
-    fc = next(f for f in bag.fcurves if f.data_path == '["b4d_fld_level"]')
-    fc.keyframe_points.clear()
-    fc.keyframe_points.add(len(levels))
-    co = []
-    for i, v in enumerate(levels):
-        co += [scene.frame_start + i, v]
-    fc.keyframe_points.foreach_set("co", co)
-    fc.keyframe_points.foreach_set("interpolation", [0] * len(levels))      # constant: one value per frame
-    fc.update()
+    levels = _levels(snd, float(snd.specs[0]), scene.render.fps / scene.render.fps_base,
+                     float(ob.get("b4d_fld_low", 20.0)), float(ob.get("b4d_fld_high", 20000.0)))
+    _bake_keys(ob, "b4d_fld_level", None, scene.frame_start, levels)
     ob.update_tag()
     return len(levels)
 
@@ -807,7 +989,7 @@ class BLENDA4D_OT_field_sound(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return _field_of(context, "sound_field") is not None
+        return kind_of(context.view_layer.objects.active) in ("sound_field", "sound_effector")
 
     def invoke(self, context, event):
         if self.again:
@@ -816,11 +998,12 @@ class BLENDA4D_OT_field_sound(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
-        ob = _field_of(context, "sound_field")
+        ob = context.view_layer.objects.active
+        effector = kind_of(ob) == "sound_effector"
         if not self.again:
-            ob["b4d_fld_sound"] = self.filepath
+            ob["b4d_eff_sound" if effector else "b4d_fld_sound"] = self.filepath
         try:
-            n = bake_sound(ob, context.scene)
+            n = bake_bands(ob, context.scene) if effector else bake_sound(ob, context.scene)
         except Exception as ex:
             self.report({"ERROR"}, f"Could not read the sound: {ex}")
             return {"CANCELLED"}
@@ -844,10 +1027,11 @@ def drop(context, event, objs, row_name):
         target = bpy.data.objects.get(row_name)
     if target is None:
         return False
-    if object_kind(target) in WITH_EFFECTORS:
-        want, prop = [o for o in objs if effector_kind(o)], "b4d_effectors"
-    elif effector_kind(target):
-        want, prop = [o for o in objs if field_kind(o)], "b4d_fields"
+    if object_kind(target) in WITH_EFFECTORS or (effector_kind(target) == "group_effector" and
+                                                  all(effector_kind(o) for o in objs)):
+        want, prop = [o for o in objs if effector_kind(o) and o != target], "b4d_effectors"
+    elif effector_kind(target) or field_kind(target) == "group_field":
+        want, prop = [o for o in objs if field_kind(o) and o != target], "b4d_fields"
     else:
         return False
     if not want or len(want) != len(objs):
@@ -999,13 +1183,15 @@ def _list(col, ob, prop, empty_hint):
 
 def page_effectors(col, ob):
     col.use_property_split = False
-    col.label(text="Effectors act on the pieces in this order")
+    col.label(text="The effectors it holds, acting in this order" if effector_kind(ob) else
+              "Effectors act on the pieces in this order")
     _list(col, ob, "b4d_effectors", "Drag an effector here from the Object Manager, or select this and make one")
 
 
 def page_fields(col, ob):
     col.use_property_split = False
-    col.label(text="With Fields, the effector acts only where they reach")
+    col.label(text="The Fields it holds, combined in order" if field_kind(ob) else
+              "With Fields, the effector acts only where they reach")
     _list(col, ob, "b4d_fields", "Drag a Field here from the Object Manager, or select this and make one")
     lst, i = ob.b4d_fields, ob.b4d_field_index
     if 0 <= i < len(lst) and lst[i].object is not None:
@@ -1016,7 +1202,7 @@ def page_fields(col, ob):
         box.prop(row, "mix", text="Mix")
         if i > 0:
             box.prop(row, "blend", text="Combine")
-    if len(lst):
+    if len(lst) and effector_kind(ob):
         col.separator()
         sub = col.column()
         sub.use_property_split = True
@@ -1045,8 +1231,24 @@ def _row(col, ob, key, text):
         col.prop(ob, f'["{key}"]', text=text)
 
 
+def _image_row(col, ob, key, text="Image"):
+    r = col.row(align=True)
+    r.prop(ob, f'["{key}"]', text=text)
+    r.operator("blenda4d.field_image", text="", icon="FILEBROWSER").key = key
+
+
+def _formula_row(col, ob, key):
+    from . import moclone_formula
+    col.prop(ob, f'["{key}"]', text="Formula")
+    err = moclone_formula.check(str(ob.get(key, "")), mn.FORMULA_NAMES)
+    if err:
+        col.label(text=err, icon="ERROR")
+
+
 def _pattern_rows(col, ob, prefix):
     col.prop(ob, prefix + "_pattern_ui", text="Pattern")
+    if ob.get(prefix + "_pattern") == 4:
+        _image_row(col, ob, prefix + "_image")
     _row(col, ob, prefix + "_noise_size", "Pattern Size")
     _row(col, ob, prefix + "_contrast", "Contrast")
     _row(col, ob, prefix + "_speed", "Speed")
@@ -1061,8 +1263,49 @@ def page_effector(col, ob):
         _row(col, ob, "b4d_eff_upright", "Keep Upright")
         col.label(text="Pieces turn their Z axis toward this effector", icon="INFO")
     elif kind == "delay_effector":
+        col.prop(ob, "b4d_eff_delay_mode_ui", text="Mode")
+        if ob.get("b4d_eff_delay_mode") == 1:
+            _row(col, ob, "b4d_eff_stiffness", "Stiffness")
+            _row(col, ob, "b4d_eff_damping", "Damping")
         col.label(text="Pieces trail behind; play from the first frame", icon="INFO")
+    elif kind == "group_effector":
+        col.label(text="Its Effectors page lists the effectors it holds", icon="INFO")
+    elif kind == "inheritance_effector":
+        col.prop(ob, '["b4d_eff_source"]', text="Source")
+        src = ob.get("b4d_eff_source")
+        if src is None:
+            col.label(text="Pick a Matrix, a Cloner or any object with points", icon="INFO")
+        elif object_kind(src) == "cloner" and not get(src, "Keep Instances"):
+            col.label(text="Turn on the Cloner's Keep Instances to take its copies", icon="INFO")
+    elif kind == "push_apart_effector":
+        _row(col, ob, "b4d_eff_radius", "Radius")
+        _row(col, ob, "b4d_eff_iterations", "Iterations")
+    elif kind == "spline_effector":
+        col.prop(ob, '["b4d_eff_spline"]', text="Spline")
+        if not isinstance(ob.get("b4d_eff_spline"), bpy.types.Object) or ob["b4d_eff_spline"].type != "CURVE":
+            col.label(text="Pick a spline", icon="INFO")
+        _row(col, ob, "b4d_eff_start", "Start")
+        _row(col, ob, "b4d_eff_end", "End")
+        _row(col, ob, "b4d_eff_offset", "Offset")
+        _row(col, ob, "b4d_eff_align", "Align to Spline")
     else:
+        if kind == "volume_effector":
+            col.prop(ob, '["b4d_eff_volume"]', text="Volume")
+            if not isinstance(ob.get("b4d_eff_volume"), bpy.types.Object):
+                col.label(text="Pick a closed mesh: pieces inside it are changed", icon="INFO")
+        if kind == "formula_effector":
+            _formula_row(col, ob, "b4d_eff_formula")
+        elif kind == "sound_effector":
+            r = col.row(align=True)
+            path = ob.get("b4d_eff_sound", "")
+            r.label(text="Sound: " + (bpy.path.basename(path) if path else "none"))
+            r.operator("blenda4d.field_sound", text="Load Sound", icon="FILEBROWSER")
+            _row(col, ob, "b4d_eff_low", "Low (Hz)")
+            _row(col, ob, "b4d_eff_high", "High (Hz)")
+            r = col.row()
+            r.enabled = bool(path)
+            r.operator("blenda4d.field_sound", text="Bake Again", icon="FILE_REFRESH").again = True
+            _row(col, ob, "b4d_eff_gain", "Gain")
         if kind == "random_effector":
             col.prop(ob, "b4d_eff_random_mode_ui", text="Mode")
             if ob.get("b4d_eff_random_mode") == 2:
@@ -1081,9 +1324,13 @@ def page_effector(col, ob):
         if "b4d_eff_use_color" in keys:
             col.separator()
             col.prop(ob, '["b4d_eff_use_color"]', text="Color")
-            r = col.row()
-            r.active = bool(ob.get("b4d_eff_use_color"))
-            r.prop(ob, '["b4d_eff_color"]', text="Tint")
+            sub = col.column()
+            sub.active = bool(ob.get("b4d_eff_use_color"))
+            sub.prop(ob, "b4d_eff_color_mode_ui", text="Color Mode")
+            gradient = ob.get("b4d_eff_color_mode") == 1
+            sub.prop(ob, '["b4d_eff_color"]', text="From" if gradient else "Tint")
+            if gradient:
+                sub.prop(ob, '["b4d_eff_color2"]', text="To")
         if kind == "random_effector":
             _row(col, ob, "b4d_eff_seed", "Seed")
     _users(col, ob, "b4d_effectors", "Effectors")
@@ -1111,12 +1358,38 @@ def page_field(col, ob):
     elif kind == "shader_field":
         _pattern_rows(col, ob, "b4d_fld")
     elif kind == "image_field":
-        r = col.row(align=True)
-        r.prop(ob, '["b4d_fld_image"]', text="Image")
-        r.operator("blenda4d.field_image", text="", icon="FILEBROWSER")
+        _image_row(col, ob, "b4d_fld_image")
         _row(col, ob, "b4d_fld_image_size", "Size")
-        if not isinstance(ob.get("b4d_fld_image"), bpy.types.Image):
+        img = ob.get("b4d_fld_image")
+        if not isinstance(img, bpy.types.Image):
             col.label(text="Pick or open an image: bright parts act, dark parts don't", icon="INFO")
+        elif img.source in ("MOVIE", "SEQUENCE"):
+            _row(col, ob, "b4d_fld_frame_offset", "Frame Offset")
+    elif kind == "material_field":
+        col.prop(ob, '["b4d_fld_material"]', text="Material")
+        _row(col, ob, "b4d_fld_image_size", "Size")
+        img = mn.material_image(ob.get("b4d_fld_material"))
+        col.label(text=f"Reads: {img.name}" if img else "Pick a material that uses an image texture",
+                  icon="IMAGE_DATA" if img else "INFO")
+        if img is not None and img.source in ("MOVIE", "SEQUENCE"):
+            _row(col, ob, "b4d_fld_frame_offset", "Frame Offset")
+    elif kind == "formula_field":
+        _formula_row(col, ob, "b4d_fld_formula")
+    elif kind == "time_field":
+        _row(col, ob, "b4d_fld_delay", "Delay")
+        _row(col, ob, "b4d_fld_duration", "Duration")
+    elif kind == "object_field":
+        col.prop(ob, '["b4d_fld_object"]', text="Object")
+        _row(col, ob, "b4d_fld_distance", "Distance")
+        if not isinstance(ob.get("b4d_fld_object"), bpy.types.Object):
+            col.label(text="Pick a closed mesh", icon="INFO")
+    elif kind == "spline_field":
+        col.prop(ob, '["b4d_fld_spline"]', text="Spline")
+        _row(col, ob, "b4d_fld_radius", "Radius")
+        if not isinstance(ob.get("b4d_fld_spline"), bpy.types.Object):
+            col.label(text="Pick a spline", icon="INFO")
+    elif kind == "group_field":
+        col.label(text="Its Fields page lists the Fields it holds", icon="INFO")
     elif kind == "sound_field":
         r = col.row(align=True)                       # the file is picked (and baked) by the button only
         path = ob.get("b4d_fld_sound", "")
@@ -1133,7 +1406,8 @@ def page_field(col, ob):
         _row(col, ob, "b4d_fld_radius", "Radius")
         _row(col, ob, "b4d_fld_height", "Height")
         _row(col, ob, "b4d_fld_tube", "Thickness")
-    if kind in ("spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field", "torus_field"):
+    if kind in ("spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field", "torus_field",
+                "spline_field"):
         col.prop(ob, '["b4d_fld_falloff"]', text="Soft Edge")
     _users(col, ob, "b4d_fields", "effector's Fields")
 
@@ -1152,7 +1426,8 @@ def _menu(key, name, items):
 
 
 _PATTERN_ITEMS = (("NOISE", "Noise", "Soft, cloudy patches"), ("CELLS", "Cells", "Round cells, each fading from its middle"),
-                  ("WAVES", "Waves", "Straight bands"), ("CHECKER", "Checker", "Squares, on and off"))
+                  ("WAVES", "Waves", "Straight bands"), ("CHECKER", "Checker", "Squares, on and off"),
+                  ("IMAGE", "Image", "An image's brightness, laid flat; Pattern Size is its width (a movie plays)"))
 
 
 def _menus():
@@ -1166,6 +1441,12 @@ def _menus():
             ("SQUARE", "Square", "Jumps between the two ends"), ("SAW", "Saw", "Rises, then drops at once"))),
         "b4d_eff_pattern_ui": _menu("b4d_eff_pattern", "Pattern", _PATTERN_ITEMS),
         "b4d_fld_pattern_ui": _menu("b4d_fld_pattern", "Pattern", _PATTERN_ITEMS),
+        "b4d_eff_delay_mode_ui": _menu("b4d_eff_delay_mode", "Mode", (
+            ("BLEND", "Blend", "Pieces ease toward where they go"),
+            ("SPRING", "Spring", "Pieces overshoot and bounce to rest"))),
+        "b4d_eff_color_mode_ui": _menu("b4d_eff_color_mode", "Color Mode", (
+            ("FIXED", "Fixed", "One tint for all the pieces"),
+            ("GRADIENT", "Gradient", "From one colour to the other: by how much each piece is changed, or along the copies"))),
         "b4d_eff_memory_ui": _menu("b4d_eff_memory", "Remember", (
             ("OFF", "Off", "Each frame the Fields' reach is as it is now"),
             ("KEEP", "Keep", "Once a Field has reached a piece, it stays reached"),
@@ -1181,7 +1462,8 @@ PAGES = {"cloner": page_cloner, "matrix": page_matrix, "fracture": page_fracture
 classes = (BLENDA4D_PG_effector_link, BLENDA4D_PG_field_link, BLENDA4D_UL_links, BLENDA4D_OT_link_slot,
            BLENDA4D_OT_field_image, BLENDA4D_OT_field_sound)
 PROPS = ("b4d_effectors", "b4d_effector_index", "b4d_fields", "b4d_field_index", "b4d_eff_random_mode_ui",
-         "b4d_eff_wave_shape_ui", "b4d_eff_pattern_ui", "b4d_fld_pattern_ui", "b4d_eff_memory_ui")
+         "b4d_eff_wave_shape_ui", "b4d_eff_pattern_ui", "b4d_fld_pattern_ui", "b4d_eff_memory_ui", "b4d_eff_color_mode_ui",
+         "b4d_eff_delay_mode_ui")
 GROUP_OF = {**{k: "moclone" for k in OBJECTS}, **{k: "effectors" for k in EFFECTORS}, **{k: "fields" for k in FIELDS}}
 _saved = {}
 
@@ -1233,14 +1515,22 @@ def register():
                   tabs=tabs, pages=pages, titles={"OBJECT": "Object Properties", "EFFECTORS": "Effectors"}, describe=tip)
     for k in EFFECTOR_ORDER:
         label, icon, tip, _start = EFFECTORS[k]
+        tabs, pages = [("OBJECT", "Effector")], {"OBJECT": page_effector, "FIELDS": page_fields}
+        if k == "group_effector":
+            tabs.append(("EFFECTORS", "Effectors"))
+            pages["EFFECTORS"] = page_effectors
+        tabs.append(("FIELDS", "Fields"))
         kinds.add(k, label, icon, create=(lambda k: lambda context: create_effector(context, k))(k),
-                  tabs=[("OBJECT", "Effector"), ("FIELDS", "Fields")], pages={"OBJECT": page_effector, "FIELDS": page_fields},
-                  titles={"OBJECT": label, "FIELDS": "Fields"},
+                  tabs=tabs, pages=pages, titles={"OBJECT": label, "FIELDS": "Fields", "EFFECTORS": "Effectors"},
                   describe=tip + " (with a Cloner, Matrix or Fracture selected, it is added to its list)")
     for k in FIELD_ORDER:
         label, icon, tip, _start = FIELDS[k]
+        tabs, pages = [("OBJECT", "Field")], {"OBJECT": page_field}
+        if k == "group_field":
+            tabs.append(("FIELDS", "Fields"))
+            pages["FIELDS"] = page_fields
         kinds.add(k, label, icon, create=(lambda k: lambda context: create_field(context, k))(k),
-                  tabs=[("OBJECT", "Field")], pages={"OBJECT": page_field}, titles={"OBJECT": label},
+                  tabs=tabs, pages=pages, titles={"OBJECT": label, "FIELDS": "Fields"},
                   describe=tip + " (with an effector selected, it is added to its Fields)")
     for k in OBJECT_ORDER + EFFECTOR_ORDER + FIELD_ORDER:
         label = (OBJECTS.get(k) or EFFECTORS.get(k) or FIELDS.get(k))[0]

@@ -185,6 +185,57 @@ def scene():
     shade["b4d_eff_pattern"] = 1
     tr = add("tracer", [tgt])
     tr.name = "Tracer"
+    # a second row: a Null of two boxes cloned as one, along a spline, pushed apart, tinted by a gradient
+    null = bpy.data.objects.new("Pair", None)
+    bpy.context.collection.objects.link(null)
+    for i, z in enumerate((0.25, 0.75)):
+        part = mesh("cube", f"Pair Box {i + 1}", material("Teal", (0.1, 0.6, 0.6, 1), clone_color=True), size=0.4,
+                    location=(0, 0, z))
+        part.parent = null
+    row = add("cloner", [null])
+    row.name = "Row"
+    row.location = (0.0, -9.0, 0.0)
+    M.put(row, "Count", 12)
+    cu = bpy.data.curves.new("Path", "CURVE")
+    sp = cu.splines.new("BEZIER")
+    sp.bezier_points.add(2)
+    for bp, co in zip(sp.bezier_points, ((-6.0, -9.0, 0.0), (0.0, -6.0, 1.0), (6.0, -9.0, 0.0))):
+        bp.co = co
+        bp.handle_left_type = bp.handle_right_type = "AUTO"
+    path = bpy.data.objects.new("Path", cu)
+    bpy.context.collection.objects.link(path)
+    follow = add("spline_effector", [row])
+    follow["b4d_eff_spline"] = path
+    apart = add("push_apart_effector", [row])
+    tint = add("formula_effector", [row])
+    tint["b4d_eff_position"] = [0.0, 0.0, 0.0]
+    tint["b4d_eff_use_color"] = True
+    tint["b4d_eff_color_mode"] = 1
+    group = add("group_effector", [])
+    inner = add("random_effector", [group])
+    vol = add("volume_effector", [])
+    vol["b4d_eff_volume"] = cube
+    inh = add("inheritance_effector", [])
+    inh["b4d_eff_source"] = bpy.data.objects.get("Matrix")
+    sound_eff = add("sound_effector", [])
+    sound_eff["b4d_eff_sound"] = wav
+    blenda4d.moclone.bake_bands(sound_eff, bpy.context.scene)
+    delay = bpy.data.objects.get("Delay Effector")
+    if delay is not None:
+        delay["b4d_eff_delay_mode"] = 1
+    for k in ("formula_field", "time_field", "object_field", "spline_field", "material_field"):
+        f = add(k, [])
+        if k == "object_field":
+            f["b4d_fld_object"] = cube
+        if k == "spline_field":
+            f["b4d_fld_spline"] = path
+        if k == "material_field":
+            mat = material("Striped", (1, 1, 1, 1))
+            tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+            tex.image = img
+            f["b4d_fld_material"] = mat
+    gf = add("group_field", [])
+    add("box_field", [gf])
     blenda4d.moclone.sync_all()
     log("OBJECTS", [(o.name, o.get("b4d_type"), o.parent and o.parent.name) for o in bpy.context.scene.objects])
     for g in ("moclone", "effectors", "fields"):
@@ -314,7 +365,12 @@ for name, tab, setting in (
         ("Box Field", "OBJECT", None), ("Random Field", "OBJECT", None), ("Cylinder Field", "OBJECT", None),
         ("Capsule Field", "OBJECT", None), ("Cone Field", "OBJECT", None), ("Torus Field", "OBJECT", None),
         ("Radial Field", "OBJECT", None), ("Shader Field", "OBJECT", None), ("Wave Field", "OBJECT", None),
-        ("Image Field", "OBJECT", None), ("Sound Field", "OBJECT", None)):
+        ("Image Field", "OBJECT", None), ("Sound Field", "OBJECT", None),
+        ("Row", "EFFECTORS", None), ("Spline Effector", "OBJECT", None), ("Push Apart Effector", "OBJECT", None),
+        ("Formula Effector", "OBJECT", None), ("Group Effector", "EFFECTORS", None), ("Volume Effector", "OBJECT", None),
+        ("Inheritance Effector", "OBJECT", None), ("Sound Effector", "OBJECT", None),
+        ("Formula Field", "OBJECT", None), ("Time Field", "OBJECT", None), ("Object Field", "OBJECT", None),
+        ("Spline Field", "OBJECT", None), ("Material Field", "OBJECT", None), ("Group Field", "FIELDS", None)):
     if setting:
         PLAN += [lambda n=name, s=setting: put(n, *s)]
     tag = f"_{setting[0]}_{setting[1]}".replace(" ", "") if setting else ""

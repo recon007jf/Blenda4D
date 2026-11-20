@@ -189,6 +189,7 @@ EFFECTOR_ROWS = {   # each row and a value that must change the copies
                         ("b4d_eff_random_mode", 2), ("b4d_eff_use_color", True)],
     "shader_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
                         ("b4d_eff_scale", (0.0, 50.0, 0.0)), ("b4d_eff_pattern", 1), ("b4d_eff_pattern", 2), ("b4d_eff_pattern", 3),
+                        ("b4d_eff_pattern", 4),
                         ("b4d_eff_noise_size", 60.0), ("b4d_eff_contrast", 20.0), ("b4d_eff_seed", 5),
                         ("b4d_eff_use_color", True)],
     "wave_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
@@ -201,7 +202,62 @@ EFFECTOR_ROWS = {   # each row and a value that must change the copies
     "target_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_upright", True)],
     "time_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (10.0, 0.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.3, 0.0)),
                       ("b4d_eff_scale", (20.0, 20.0, 20.0))],
+    "inheritance_effector": [("b4d_eff_strength", 40.0)],
+    "push_apart_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_radius", 150.0), ("b4d_eff_iterations", 1)],
+    "spline_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_start", 20.0), ("b4d_eff_end", 60.0), ("b4d_eff_offset", 10.0),
+                        ("b4d_eff_align", False)],
+    "formula_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
+                         ("b4d_eff_scale", (0.0, 50.0, 0.0)), ("b4d_eff_formula", "id * 0.3 + x / 400"), ("b4d_eff_use_color", True)],
+    "sound_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_gain", 40.0),
+                       ("b4d_eff_use_color", True)],
+    "group_effector": [("b4d_eff_strength", 40.0)],
+    "volume_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
+                        ("b4d_eff_scale", (0.0, 50.0, 0.0)), ("b4d_eff_use_color", True)],
 }
+
+
+def points_mesh(name, pts):
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(pts, [], [])
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(ob)
+    return ob
+
+
+def spline(name="Path"):
+    cu = bpy.data.curves.new(name, "CURVE")
+    sp = cu.splines.new("POLY")
+    sp.points.add(2)
+    for p, co in zip(sp.points, ((-2.0, 1.0, 0.0, 1.0), (0.0, 3.0, 0.0, 1.0), (2.0, 1.0, 1.0, 1.0))):
+        p.co = co
+    ob = bpy.data.objects.new(name, cu)
+    bpy.context.collection.objects.link(ob)
+    return ob
+
+
+def setup_effector(kind, e):
+    """What the effector needs before it can act: a source, a spline or a volume."""
+    if kind == "inheritance_effector":
+        setv(e, "b4d_eff_source", points_mesh("Spots", [(i * 0.3, 2.0, i * 0.2) for i in range(4)]))
+    elif kind == "spline_effector":
+        setv(e, "b4d_eff_spline", spline())
+    elif kind == "shader_effector":
+        setv(e, "b4d_eff_image", gradient_image())
+    elif kind == "sound_effector":
+        setv(e, "b4d_eff_sound", tone_file())
+        M.bake_bands(e, bpy.context.scene)
+        bpy.context.scene.frame_set(3)
+    elif kind == "group_effector":
+        select(e)
+        bpy.ops.blenda4d.add_kind(kind="plain_effector")
+        member = bpy.context.view_layer.objects.active
+        member.select_set(False)
+        e.select_set(True)
+        bpy.context.view_layer.objects.active = e
+    elif kind == "volume_effector":
+        vol = cube("Inside", size=1.0, loc=(0.0, 0.0, 0.0))
+        vol.select_set(False)
+        setv(e, "b4d_eff_volume", vol)
 
 
 def setv(ob, key, v):
@@ -216,10 +272,13 @@ def test_effector(kind):
     box.scale = (1.0, 2.0, 0.5)                       # not round, so turning shows
     c = add("cloner", box)
     M.put(c, "Count", 5)
-    bpy.context.scene.frame_set(25)                   # Time works on the scene's time
+    bpy.context.scene.frame_set(3 if kind == "sound_effector" else 25)   # Time works on the scene's time; frame 3 is loud
     base = result(c)
     e = add(kind, c)
     check(M.effector_kind(e) == kind and [o for o, k in M.effectors_of(c)] == [e], "made with the Cloner selected: in its list")
+    if kind in ("inheritance_effector", "spline_effector", "volume_effector", "group_effector"):
+        check(result(c) == base, "with nothing picked or held yet: no change")
+    setup_effector(kind, e)
     if kind == "time_effector":
         bpy.context.scene.frame_set(1)
         at1 = result(c)
@@ -239,10 +298,55 @@ def test_effector(kind):
     if kind == "target_effector":
         e.location.x += 4.0
         check(result(c) != on, "moving the effector turns the copies again")
+    if kind == "inheritance_effector":
+        setv(e, "b4d_eff_strength", 100.0)
+        pts = sorted(result(c)[0])
+        src = e["b4d_eff_source"]
+        ys = [p[1] for p in pts]
+        check(1.55 < min(ys) and max(ys) < 2.45, f"full Strength: the copies sit on the Source's points (y {min(ys):.2f}..{max(ys):.2f})")
+        m = M.create_object(bpy.context, "matrix")
+        M.put(m, "Count", 5)
+        M.put(m, "Offset", (0.0, 120.0, 0.0))
+        setv(e, "b4d_eff_source", m)
+        check(sorted(result(c)[0]) != pts, "Source a Matrix: the copies take its places")
+        src.location.x += 1.0
+        setv(e, "b4d_eff_source", src)
+        on = result(c)
+    if kind == "spline_effector":
+        sp = e["b4d_eff_spline"]
+        before = result(c)
+        sp.location.z += 1.0
+        check(result(c) != before, "moving the spline moves the copies")
+    if kind == "group_effector":
+        member = e.b4d_effectors[0].object
+        check(M.effector_kind(member) == "plain_effector" and not M.effectors_of(c)[1:],
+              "made with the Group selected: it goes into the Group, not the Cloner")
+        before = result(c)
+        setv(member, "b4d_eff_position", (0.0, 0.0, 250.0))
+        check(result(c) != before, "a change on an effector in the Group reaches the copies")
+        e.b4d_effectors[0].use = False
+        check(result(c) == base, "unticked in the Group: it no longer acts")
+        e.b4d_effectors[0].use = True
+        on = result(c)
+    if kind == "sound_effector":
+        bands3 = list(e["b4d_eff_bands"])
+        bpy.context.scene.frame_set(18)
+        bands18 = list(e["b4d_eff_bands"])
+        check(max(bands3) > 0.3 and max(bands18) < max(bands3) * 0.2,
+              f"bands baked: loud frames high, quiet frames low ({max(bands3):.2f}, {max(bands18):.2f})")
+        check(max(range(16), key=lambda i: bands3[i]) in range(5, 11), "the 440 Hz tone lands in a middle band")
+        quiet = result(c)
+        bpy.context.scene.frame_set(3)
+        check(result(c) != quiet, "the copies follow the sound from frame to frame")
+    if kind == "volume_effector":
+        vol = e["b4d_eff_volume"]
+        before = result(c)
+        vol.location.x += 0.6
+        check(result(c) != before, "moving the volume changes which copies are inside")
     for key, v in EFFECTOR_ROWS[kind]:
         before = result(c)
         old = e[key]
-        old = tuple(old) if hasattr(old, "__len__") else old
+        old = tuple(old) if hasattr(old, "__len__") and not isinstance(old, str) else old
         setv(e, key, v)
         check(result(c) != before, f"row {key}")
         if key == "b4d_eff_use_color":
@@ -251,6 +355,13 @@ def test_effector(kind):
             before = result(c)
             setv(e, "b4d_eff_color", (0.0, 1.0, 0.0))
             check(result(c) != before, "row b4d_eff_color")
+            before = result(c)
+            setv(e, "b4d_eff_color_mode", 1)
+            check(result(c)[1] != before[1], "Color Mode Gradient: the tint changes")
+            before = result(c)
+            setv(e, "b4d_eff_color2", (1.0, 0.0, 1.0))
+            check(result(c)[1] != before[1], "row b4d_eff_color2 (gradient's other end)")
+            setv(e, "b4d_eff_color_mode", 0)
         else:
             setv(e, key, old)
     if kind in ("random_effector", "shader_effector"):     # Speed: the pattern (Random in Noise mode) moves in time
@@ -271,6 +382,29 @@ def test_effector(kind):
     c.b4d_effectors.remove(0)
     update()
     check(result(c) == base, "taken out of the list: the copies are as without it")
+
+
+def test_null_clone():
+    print("== a Null with objects under it, copied as one clone")
+    clear()
+    null = bpy.data.objects.new("Group", None)
+    bpy.context.collection.objects.link(null)
+    a = cube("Top", size=0.2, loc=(0.0, 0.0, 0.3))
+    b = cube("Bottom", size=0.2, loc=(0.0, 0.0, -0.3))
+    for o in (a, b):
+        o.parent = null
+    select(null)
+    c = add("cloner", null)
+    check(null.parent == c and M.kids_of(c) == [null], "the Null goes under the Cloner and is its one child")
+    M.put(c, "Count", 3)
+    pts = result(c)[0]
+    check(len(pts) == 3 * 16, f"each clone is both cubes together ({len(pts)} points for 3 clones)")
+    check(a.display_type == "WIRE" and b.display_type == "WIRE", "the objects under the Null show as a wire while copied")
+    a.location.z += 0.5
+    check(result(c)[0] != pts, "moving an object under the Null changes every clone")
+    b.parent = None
+    update()
+    check(b.display_type != "WIRE", "taken out from under the Null: it shows again")
 
 
 def test_two_cloners_one_effector():
@@ -437,7 +571,14 @@ FIELD_ROWS = {
     "box_field": [("b4d_fld_size", (180.0, 400.0, 200.0)), ("b4d_fld_falloff", 90.0)],
     "linear_field": [("b4d_fld_length", 900.0)],
     "random_field": [("b4d_fld_noise_size", 60.0), ("b4d_fld_seed", 4), ("b4d_fld_contrast", 100.0), ("b4d_fld_speed", 2.0)],
+    "formula_field": [("b4d_fld_formula", "x / 300")],
+    "time_field": [("b4d_fld_duration", 5.0), ("b4d_fld_delay", 0.2)],
+    "object_field": [("b4d_fld_distance", 300.0)],
+    "spline_field": [("b4d_fld_radius", 60.0), ("b4d_fld_falloff", 90.0)],
+    "material_field": [("b4d_fld_image_size", 900.0)],
+    "group_field": [("b4d_fld_falloff", 50.0)],
 }
+FIELD_ROWS["group_field"] = []
 
 
 def test_field(kind):
@@ -463,6 +604,27 @@ def test_field(kind):
         bpy.context.scene.frame_set(18)
         check(result(c) != loud and loud != base, "Sound: the effect follows the loudness from frame to frame")
         bpy.context.scene.frame_set(12)
+    if kind == "object_field":
+        ball = points_mesh("Lump", [])
+        bpy.data.objects.remove(ball)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=1.2, location=(1.0, 0.0, 0.0))
+        ball = bpy.context.object
+        setv(f, "b4d_fld_object", ball)
+    if kind == "spline_field":
+        setv(f, "b4d_fld_spline", spline())
+        f["b4d_fld_spline"].location = (0.0, -2.0, 0.0)
+    if kind == "material_field":
+        mat = bpy.data.materials.new("Stripes")
+        mat.use_nodes = True
+        tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+        tex.image = gradient_image()
+        setv(f, "b4d_fld_material", mat)
+    if kind == "group_field":
+        select(f)
+        bpy.ops.blenda4d.add_kind(kind="spherical_field")
+        inner = bpy.context.view_layer.objects.active
+        setv(inner, "b4d_fld_radius", 150.0)
+        check([x[0] for x in M.fields_of(f)] == [inner], "a Field made with the Group Field selected goes into it")
     if kind == "torus_field":
         setv(f, "b4d_fld_radius", 250.0)
         setv(f, "b4d_fld_tube", 100.0)
@@ -472,7 +634,7 @@ def test_field(kind):
     for key, v in FIELD_ROWS[kind] + [("b4d_fld_strength", 30.0), ("b4d_fld_invert", True)]:
         before = result(c)
         old = f[key]
-        old = tuple(old) if hasattr(old, "__len__") else old
+        old = tuple(old) if hasattr(old, "__len__") and not isinstance(old, str) else old
         if key == "b4d_fld_speed":
             setv(f, key, v)
             bpy.context.scene.frame_set(40)
@@ -482,7 +644,12 @@ def test_field(kind):
             setv(f, key, v)
             check(result(c) != before, f"row {key}")
         setv(f, key, old)
-    if kind not in ("random_field", "shader_field", "wave_field", "sound_field"):
+    if kind == "time_field":
+        bpy.context.scene.frame_set(36)
+        check(result(c) != limited, "Time: later in the animation the effect has grown")
+        bpy.context.scene.frame_set(12)
+    if kind not in ("random_field", "shader_field", "wave_field", "sound_field", "time_field", "object_field",
+                    "spline_field", "group_field"):
         f.location.x += 3.0
         check(result(c) != limited, "moving the Field moves where the effector acts")
         f.location.x -= 3.0
@@ -822,6 +989,22 @@ def test_delay():
     for f in range(1, 6):
         bpy.context.scene.frame_set(f)
     check(lag < top() < direct + 1e-3, "less Strength trails less")
+    setv(d, "b4d_eff_strength", 80.0)
+    setv(d, "b4d_eff_delay_mode", 1)
+
+    def peak():
+        bpy.context.scene.frame_set(1)
+        best = 0.0
+        for f in range(1, 30):
+            bpy.context.scene.frame_set(f)
+            best = max(best, top())
+        return best
+    sprung = peak()
+    check(sprung > direct + 0.05, f"Spring: the copies overshoot and bounce ({sprung:.2f} m vs {direct:.2f} m)")
+    setv(d, "b4d_eff_damping", 90.0)
+    check(peak() < sprung - 0.01, "row Damping: more damping, less overshoot")
+    setv(d, "b4d_eff_stiffness", 200.0)
+    check(abs(peak() - sprung) > 0.01, "row Stiffness changes the bounce")
 
 
 def _named(f, n):
@@ -833,7 +1016,7 @@ EFFECTOR_TESTS = [(lambda k: _named(lambda: test_effector(k), k))(k) for k in M.
 FIELD_TESTS = [(lambda k: _named(lambda: test_field(k), k))(k) for k in M.FIELD_ORDER]
 for t in (test_cloner_basics, test_rows, test_more_layouts, *EFFECTOR_TESTS, test_list_checkboxes, test_drop,
           *FIELD_TESTS, test_two_fields, test_field_blends, test_image_and_sound, test_row_mix_and_memory, test_two_cloners_one_effector, test_matrix, test_fracture, test_voronoi,
-          test_tracer, test_delay, test_switch):
+          test_tracer, test_delay, test_null_clone, test_switch):
     if os.environ.get("B4D_ONLY") and os.environ["B4D_ONLY"] not in getattr(t, "__name__", ""):
         continue
     try:
