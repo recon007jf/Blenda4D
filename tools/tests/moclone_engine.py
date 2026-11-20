@@ -540,6 +540,8 @@ def test_voronoi():
     clear()
     bpy.ops.mesh.primitive_cube_add(size=2.0)
     block = bpy.context.object
+    stone = bpy.data.materials.new("Stone")
+    block.data.materials.append(stone)
     v = add("voronoi_fracture", block)
     update()
     setv(v, "b4d_vor_count", 8)
@@ -549,6 +551,8 @@ def test_voronoi():
     M.put(v, "Keep Instances", False)
     xs = [p.co.x for p in v.data.vertices]
     check(xs and abs(min(xs) + 1.0) < 1e-3 and abs(max(xs) - 1.0) < 1e-3, "the pieces fill the block exactly")
+    check(list(v.data.materials) == [stone] and all(m is None or m.original == m for m in v.data.materials),
+          "the pieces use the child's own material (not a temporary copy Blender frees later)")
     before = result(v)
     setv(v, "b4d_vor_seed", 5)
     check(result(v) != before, "row Seed")

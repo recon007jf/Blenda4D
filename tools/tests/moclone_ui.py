@@ -238,15 +238,18 @@ def drag_steps(src, owner):
     """Press on src's row in the Object Manager and move to the middle of the Attribute Manager, then let go."""
     from blenda4d import roles
 
+    def show_row():                                  # scroll the Object Manager so the dragged row is in sight
+        scroll_to(src)
+
     def press():
-        only([bpy.data.objects[owner]])
+        only([bpy.data.objects[owner]])               # the Attribute Manager shows the owner; the list stays put
         bpy.context.window_manager.b4d_am_tab = "EFFECTORS"
         _a, r = om_region()
         am = roles.areas(window().screen, "ATTRIBUTES")[0]
         _drag.update(x0=r.x + 90, y0=row_y(src), x1=am.x + am.width // 2, y1=am.y + am.height // 2)
         ev("MOUSEMOVE", "NOTHING", _drag["x0"], _drag["y0"])
         ev("LEFTMOUSE", "PRESS", _drag["x0"], _drag["y0"])
-    steps = [press]
+    steps = [show_row, lambda: None, lambda: None, press]
     for k in range(1, 9):
         steps.append(lambda k=k: ev("MOUSEMOVE", "NOTHING", _drag["x0"] + (_drag["x1"] - _drag["x0"]) * k // 8,
                                     _drag["y0"] + (_drag["y1"] - _drag["y0"]) * k // 8))
@@ -299,8 +302,11 @@ _i = [0]
 
 
 def tick():
+    fn = PLAN[_i[0]]
+    if fn.__name__ != "<lambda>" or _i[0] % 5 == 0:
+        log("STEP", _i[0], getattr(fn, "__name__", ""))          # the last step logged is where a crash happened
     try:
-        PLAN[_i[0]]()
+        fn()
     except Exception:
         log("ERROR", traceback.format_exc())
     _i[0] += 1

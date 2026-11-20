@@ -303,13 +303,14 @@ def cut(ob):
         me = ev.to_mesh()
         me.transform(to_local @ c.matrix_world)
         base = len(mats)
-        mats += [m for m in me.materials]
+        mats += [m.original if m is not None else None for m in me.materials]   # never the evaluated copies: they get freed
         for p in me.polygons:
             p.material_index += base
         src.from_mesh(me)
         ev.to_mesh_clear()
     out = ob.data
     out.clear_geometry()
+    out.materials.clear()                         # written again below, once per child's material slot
     if not src.verts:
         src.free()
         return
@@ -662,7 +663,7 @@ def _rows(col, ob, rows):
         if r is None:
             col.separator()
             continue
-        if len(r) > 2 and not r[2](value):
+        if len(r) > 2 and r[2] is not None and not r[2](value):
             continue
         s = slot(ob, r[0])
         if s is None:
@@ -670,9 +671,11 @@ def _rows(col, ob, rows):
         owner, attr = s
         v = getattr(owner, attr)
         if hasattr(v, "__len__") and not isinstance(v, str):
+            axes = r[3](value) if len(r) > 3 else "XYZ"      # only the axes the mode uses
             sub = col.column(align=True)
             for i, axis in enumerate("XYZ"):
-                sub.prop(owner, attr, index=i, text=f"{r[1]} . {axis}")
+                if axis in axes:
+                    sub.prop(owner, attr, index=i, text=f"{r[1]} . {axis}")
         else:
             col.prop(owner, attr, text=r[1])
 
@@ -706,7 +709,7 @@ def _layout_rows(order=True):
         ("Count X", "Count . X", _is("Grid", "Honeycomb")), ("Count Y", "Count . Y", _is("Grid")),
         ("Count Z", "Count . Z", _is("Grid", "Honeycomb")),
         ("Spacing Mode", "Mode", _is("Grid", "Honeycomb")),
-        ("Spacing", "Size", _is("Grid", "Honeycomb")),
+        ("Spacing", "Size", _is("Grid", "Honeycomb"), lambda v: "XZ" if v("Mode") == "Honeycomb" else "XYZ"),
         ("Form", "Form", _is("Grid")),
         ("Radius", "Radius", _is("Radial")), ("Plane", "Plane", _is("Radial")),
         ("Start Angle", "Start Angle", _is("Radial")), ("End Angle", "End Angle", _is("Radial")),
