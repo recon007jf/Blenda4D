@@ -7,8 +7,6 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 1. **Timeline**: the full animation workflow. A keyframe editor docked above the transport row, a curve editor, framing
    all, selected or current keys, key pages (interpolation, tangents, what happens before and after the keys), and
    jumping to or deleting keys from any setting. Today's timeline is the transport row only.
-2. **Breaking objects into pieces (Fracture, Voronoi Fracture)** and **Fields** that fade an effector out over space.
-   Their create-column buttons are there, greyed.
 
 ## Splines (`splines.py`)
 - Our own point-editing tools (Blender's curve edit mode and Pen stand in today).
@@ -16,15 +14,18 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 - More shapes, and gears with shaped teeth.
 
 ## MoClone (`moclone.py`)
-The Cloner (Linear, Grid, Radial, Object) and the Random, Step, Target and Time effectors are in. Still to do:
-- Matrix (the Cloner's layout as points, without copies), Tracer (lines through moving objects), Delay Effector.
+In: the Cloner (Linear, Grid with box, ball and cylinder forms, Radial, Honeycomb, Object), Matrix, Fracture, Voronoi
+Fracture and Tracer; the Random, Plain, Delay, Step, Target and Time effectors; the Linear, Spherical, Box and Random
+Fields. Effector and Field lists take drops from the Object Manager and have a check box per row. Still to do:
+- Shader and Formula effectors; Target with an up direction; Random modes (noise, Gaussian); colour from a gradient;
+  effectors acting on the child's own animation time; Delay modes (spring, ease).
+- More Fields (cylinder, cone, shader, sound) and ways to combine them (add, subtract, multiply, not only the stronger).
 - A Null with objects under it copied as one clone (only objects with geometry are copied today).
-- More Cloner modes and options: Honeycomb, spirals, a Linear "end point" instead of a step, per-axis grid shapes
-  (sphere, cylinder), copies on a volume, and Object mode reading the object's own selections.
-- More Clone Order options (blend between children, sorted by index).
-- Effectors: Plain, Shader and Formula effectors; Target with an up direction and a target object field; Random
-  modes (noise, Gaussian); colour from a gradient; effectors acting on the child's own animation time.
-- Drag handles in the viewport for Count and spacing.
+- More Cloner modes and options: spirals, copies inside a volume, Object mode reading the object's own selections,
+  more Clone Order options (blend between children, sorted by index).
+- Voronoi Fracture: points from another object or a Matrix, an inner material for the cut faces, cuts on open meshes.
+- Tracer: trace a spline's points or a mesh's points, not only object origins and Cloner copies kept as instances.
+- Drag handles in the viewport for Count, spacing, Field sizes.
 
 ## Generators (`generators.py`)
 - More Sweep options: guide curves, scale and twist along the path, finer UV control.

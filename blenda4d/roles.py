@@ -26,6 +26,14 @@ ROLE_FLAGS = {
 }
 
 
+def widget_unit():
+    """Blender's own row height in pixels (its widget unit): 18 x the UI scale, rounded half away from zero as
+    Blender's C code rounds, plus two line widths. Python's round() sends halves to the even number, which at a
+    125 % scale gives 22 instead of 23: every row then drifts a pixel and clicks and highlights land a row off."""
+    s = bpy.context.preferences.system
+    return int(18.0 * s.ui_scale + 0.5) + 2 * s.pixel_size
+
+
 def _flags(space):
     return [p.identifier for p in space.bl_rna.properties if p.identifier.startswith("show_properties_")]
 
