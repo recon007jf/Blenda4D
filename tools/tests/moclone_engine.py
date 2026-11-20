@@ -431,6 +431,8 @@ FIELD_ROWS = {
     "shader_field": [("b4d_fld_pattern", 1), ("b4d_fld_pattern", 2), ("b4d_fld_pattern", 3), ("b4d_fld_noise_size", 60.0),
                      ("b4d_fld_seed", 4), ("b4d_fld_contrast", 20.0), ("b4d_fld_speed", 2.0)],
     "wave_field": [("b4d_fld_wavelength", 130.0), ("b4d_fld_speed", 2.0)],
+    "image_field": [("b4d_fld_image_size", 900.0)],
+    "sound_field": [("b4d_fld_gain", 40.0)],
     "spherical_field": [("b4d_fld_radius", 120.0), ("b4d_fld_falloff", 90.0)],
     "box_field": [("b4d_fld_size", (180.0, 400.0, 200.0)), ("b4d_fld_falloff", 90.0)],
     "linear_field": [("b4d_fld_length", 900.0)],
@@ -451,6 +453,16 @@ def test_field(kind):
     check([x[0] for x in M.fields_of(e)] == [f], "made with the effector selected: in its Fields list")
     loc, rot = FIELD_POSE.get(kind, ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
     f.location, f.rotation_euler = loc, rot
+    if kind == "image_field":                         # bright on the right half only
+        setv(f, "b4d_fld_image", gradient_image())
+    if kind == "sound_field":                         # loud on even half-seconds, quiet on odd ones
+        setv(f, "b4d_fld_sound", tone_file())
+        M.bake_sound(f, bpy.context.scene)
+        bpy.context.scene.frame_set(3)
+        loud = result(c)
+        bpy.context.scene.frame_set(18)
+        check(result(c) != loud and loud != base, "Sound: the effect follows the loudness from frame to frame")
+        bpy.context.scene.frame_set(12)
     if kind == "torus_field":
         setv(f, "b4d_fld_radius", 250.0)
         setv(f, "b4d_fld_tube", 100.0)
@@ -470,7 +482,7 @@ def test_field(kind):
             setv(f, key, v)
             check(result(c) != before, f"row {key}")
         setv(f, key, old)
-    if kind not in ("random_field", "shader_field", "wave_field"):
+    if kind not in ("random_field", "shader_field", "wave_field", "sound_field"):
         f.location.x += 3.0
         check(result(c) != limited, "moving the Field moves where the effector acts")
         f.location.x -= 3.0
@@ -500,6 +512,122 @@ def test_two_fields():
     check(result(c) != one, "a second Field adds the places it reaches")
     e.b4d_fields[1].use = False
     check(result(c) == one, "...and leaving it out takes them away again")
+
+
+def gradient_image():
+    """A 4 x 4 image: black on the left half, white on the right."""
+    img = bpy.data.images.get("B4D Gradient") or bpy.data.images.new("B4D Gradient", 4, 4)
+    px = []
+    for y in range(4):
+        for x in range(4):
+            v = 1.0 if x >= 2 else 0.0
+            px += [v, v, v, 1.0]
+    img.pixels[:] = px
+    return img
+
+
+def tone_file():
+    """A 2 s 440 Hz tone: loud for half a second, near silent for half a second, and again."""
+    import math, struct, tempfile, wave
+    path = os.path.join(tempfile.gettempdir(), "b4d_tone.wav")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(22050)
+        w.writeframes(b"".join(struct.pack("<h", int(30000 * math.sin(2 * math.pi * 440 * i / 22050) *
+                                                       (1.0 if (i // 11025) % 2 == 0 else 0.02))) for i in range(44100)))
+    return path
+
+
+def test_image_and_sound():
+    print("== Image and Sound Fields")
+    clear()
+    c = add("cloner", cube())
+    M.put(c, "Count", 9)
+    M.put(c, "Offset", (50.0, 0.0, 0.0))
+    e = add("plain_effector", c)
+    full = result(c)
+    f = add("image_field", e)
+    no_image = result(c)
+    check(no_image != full, "Image Field with no image: the effector acts nowhere")
+    img = gradient_image()
+    setv(f, "b4d_fld_image", img)
+    half = result(c)
+    check(half not in (full, no_image), "with a half-white image: the effector acts on part of the copies")
+    black = bpy.data.images.new("B4D Black", 2, 2)
+    black.pixels[:] = [0.0, 0.0, 0.0, 1.0] * 4
+    setv(f, "b4d_fld_image", black)
+    check(result(c) == no_image, "a black image: acts nowhere (picking another image rebuilds)")
+    setv(f, "b4d_fld_image", img)
+    clear()
+    c = add("cloner", cube())
+    e = add("plain_effector", c)
+    s = add("sound_field", e)
+    path = tone_file()
+    setv(s, "b4d_fld_sound", path)
+    n = M.bake_sound(s, bpy.context.scene)
+    check(n == 48, f"Sound: one loudness value per frame ({n} frames for 2 s at 24 fps)")
+    bpy.context.scene.frame_set(3)
+    loud = float(s["b4d_fld_level"])
+    bpy.context.scene.frame_set(18)
+    quiet = float(s["b4d_fld_level"])
+    check(loud > 0.8 and quiet < 0.1, f"Sound: loud frames near 1, quiet ones near 0 ({loud:.2f}, {quiet:.2f})")
+    setv(s, "b4d_fld_high", 100.0)
+    M.bake_sound(s, bpy.context.scene)
+    bpy.context.scene.frame_set(3)
+    check(float(s["b4d_fld_level"]) < loud * 0.6, "row High: leaving out the 440 Hz tone lowers the loudness")
+    setv(s, "b4d_fld_high", 20000.0)
+    setv(s, "b4d_fld_low", 2000.0)
+    M.bake_sound(s, bpy.context.scene)
+    bpy.context.scene.frame_set(3)
+    check(float(s["b4d_fld_level"]) < loud * 0.6, "row Low: the same from below")
+
+
+def test_row_mix_and_memory():
+    print("== Mix per row, and Fields that remember")
+    clear()
+    c = add("cloner", cube())
+    M.put(c, "Count", 9)
+    e = add("plain_effector", c)
+    f = add("spherical_field", e)
+    setv(f, "b4d_fld_radius", 150.0)
+    full = result(c)
+    e.b4d_fields[0].mix = 50.0
+    check(result(c) != full, "row Mix: half the Field, half the effect")
+    e.b4d_fields[0].mix = 100.0
+    # the Field travels along the row from frame 1 to 10
+    f.location = (0.0, 0.0, 0.0)
+    f.keyframe_insert("location", frame=1)
+    f.location = (8.0, 0.0, 0.0)
+    f.keyframe_insert("location", frame=10)
+
+    def lifted():
+        """How many copies are lifted (moved up) now."""
+        pts = result(c)[0]
+        return len({round(p[0], 1) for p in pts if p[2] > 0.5})
+
+    def play(to):
+        update()
+        bpy.context.scene.frame_set(1)
+        for fr in range(1, to + 1):
+            bpy.context.scene.frame_set(fr)
+    play(10)
+    now_only = lifted()
+    setv(e, "b4d_eff_memory", 1)
+    play(10)
+    kept = lifted()
+    check(kept > now_only, f"Remember Keep: the copies the Field passed stay lifted ({now_only} -> {kept})")
+    setv(e, "b4d_eff_memory", 2)
+    setv(e, "b4d_eff_fade", 0.1)
+    play(10)
+    faded = lifted()
+    check(now_only <= faded < kept, f"Remember Fade: they let go after Fade Time ({faded})")
+    setv(e, "b4d_eff_fade", 5.0)
+    play(10)
+    check(lifted() > faded, "row Fade Time: a longer fade keeps more lifted")
+    setv(e, "b4d_eff_memory", 0)
+    play(10)
+    check(lifted() == now_only, "Remember Off: as before")
 
 
 def test_field_blends():
@@ -696,11 +824,18 @@ def test_delay():
     check(lag < top() < direct + 1e-3, "less Strength trails less")
 
 
-EFFECTOR_TESTS = [(lambda k: lambda: test_effector(k))(k) for k in M.EFFECTOR_ORDER if k != "delay_effector"]
-FIELD_TESTS = [(lambda k: lambda: test_field(k))(k) for k in M.FIELD_ORDER]
+def _named(f, n):
+    f.__name__ = n
+    return f
+
+
+EFFECTOR_TESTS = [(lambda k: _named(lambda: test_effector(k), k))(k) for k in M.EFFECTOR_ORDER if k != "delay_effector"]
+FIELD_TESTS = [(lambda k: _named(lambda: test_field(k), k))(k) for k in M.FIELD_ORDER]
 for t in (test_cloner_basics, test_rows, test_more_layouts, *EFFECTOR_TESTS, test_list_checkboxes, test_drop,
-          *FIELD_TESTS, test_two_fields, test_field_blends, test_two_cloners_one_effector, test_matrix, test_fracture, test_voronoi,
+          *FIELD_TESTS, test_two_fields, test_field_blends, test_image_and_sound, test_row_mix_and_memory, test_two_cloners_one_effector, test_matrix, test_fracture, test_voronoi,
           test_tracer, test_delay, test_switch):
+    if os.environ.get("B4D_ONLY") and os.environ["B4D_ONLY"] not in getattr(t, "__name__", ""):
+        continue
     try:
         t()
     except Exception:

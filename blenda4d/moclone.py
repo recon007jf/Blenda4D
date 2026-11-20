@@ -84,9 +84,11 @@ FIELDS = {
     "shader_field": ("Shader Field", "TEXTURE", "Let an effector act by a pattern: noise, cells, waves or a checker",
                      {"b4d_fld_contrast": 100.0}),
     "wave_field": ("Wave Field", "MOD_WAVE", "Let an effector act in rings going out from this Field", {}),
+    "image_field": ("Image Field", "IMAGE_DATA", "Let an effector act by the brightness of an image laid flat under this Field", {}),
+    "sound_field": ("Sound Field", "SOUND", "Let an effector act as strongly as a sound is loud at each frame", {}),
 }
 FIELD_ORDER = ("linear_field", "spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field",
-               "torus_field", "radial_field", "random_field", "shader_field", "wave_field")
+               "torus_field", "radial_field", "random_field", "shader_field", "wave_field", "image_field", "sound_field")
 
 # setting -> (default, how the field shows)
 SETTINGS = {
@@ -134,6 +136,20 @@ SETTINGS = {
     "b4d_fld_wavelength": (200.0, dict(min=0.1, soft_max=10000.0, precision=1, step=100,
                                        description="Distance from one ring to the next (cm)")),
     "b4d_fld_pattern": (0, None),
+    "b4d_fld_image": (None, None),
+    "b4d_fld_image_size": (400.0, dict(min=0.1, soft_max=10000.0, precision=1, step=100,
+                                       description="How wide the image lies (cm), centred on the Field")),
+    "b4d_fld_sound": ("", dict(subtype="FILE_PATH", description="The sound file whose loudness drives the Field")),
+    "b4d_fld_low": (20.0, dict(min=1.0, max=20000.0, soft_max=20000.0, precision=0,
+                               description="Leave out sounds lower than this (Hz); bake again after changing it")),
+    "b4d_fld_high": (20000.0, dict(min=1.0, max=20000.0, precision=0,
+                                   description="Leave out sounds higher than this (Hz); bake again after changing it")),
+    "b4d_fld_level": (0.0, dict(min=0.0, max=1.0, description="How loud the sound is at this frame (baked from the file)")),
+    "b4d_fld_gain": (100.0, dict(subtype="PERCENTAGE", min=0.0, soft_max=400.0, precision=1,
+                                 description="Turn the loudness up or down")),
+    "b4d_eff_memory": (0, None),
+    "b4d_eff_fade": (1.0, dict(min=0.0, soft_max=10.0, precision=2, subtype="TIME_ABSOLUTE",
+                               description="How long a piece takes to let go after the Fields leave it (seconds)")),
     "b4d_vor_count": (20, dict(min=1, max=500, description="How many pieces")),
     "b4d_vor_seed": (0, dict(min=0, max=100000, description="Place the cuts differently")),
 }
@@ -141,6 +157,7 @@ _MOVE = ("b4d_eff_strength", "b4d_eff_position", "b4d_eff_rotation", "b4d_eff_sc
 _TINT = ("b4d_eff_use_color", "b4d_eff_color")
 _PATTERN = ("b4d_eff_pattern", "b4d_eff_noise_size", "b4d_eff_contrast", "b4d_eff_speed", "b4d_eff_seed")
 _F = ("b4d_fld_strength", "b4d_fld_invert")
+_MEMORY = ("b4d_eff_memory", "b4d_eff_fade")
 KIND_SETTINGS = {
     "random_effector": _MOVE + _TINT + ("b4d_eff_seed", "b4d_eff_random_mode", "b4d_eff_speed"),
     "shader_effector": _MOVE + _TINT + _PATTERN,
@@ -161,8 +178,12 @@ KIND_SETTINGS = {
     "radial_field": _F + ("b4d_fld_sweep", "b4d_fld_falloff"),
     "shader_field": _F + ("b4d_fld_pattern", "b4d_fld_noise_size", "b4d_fld_seed", "b4d_fld_speed", "b4d_fld_contrast", "b4d_fld_falloff"),
     "wave_field": _F + ("b4d_fld_wavelength", "b4d_fld_speed", "b4d_fld_falloff"),
+    "image_field": _F + ("b4d_fld_image", "b4d_fld_image_size", "b4d_fld_falloff"),
+    "sound_field": _F + ("b4d_fld_sound", "b4d_fld_low", "b4d_fld_high", "b4d_fld_level", "b4d_fld_gain", "b4d_fld_falloff"),
     "voronoi_fracture": ("b4d_vor_count", "b4d_vor_seed"),
 }
+for _k in EFFECTORS:
+    KIND_SETTINGS[_k] = KIND_SETTINGS[_k] + _MEMORY
 
 
 def kind_of(ob):
@@ -208,7 +229,7 @@ def _listed(ob, prop, kind_fn):
         o = link.object
         k = kind_fn(o)
         if k is not None and link.use and o.name in bpy.data.objects and all(o != x[0] for x in out):
-            out.append((o, k, getattr(link, "blend", "MAX")))
+            out.append((o, k, getattr(link, "blend", "MAX"), round(getattr(link, "mix", 100.0), 3)))
     return out
 
 
@@ -220,7 +241,7 @@ def fields_of(effector):
 
 def effectors_of(ob):
     """[(effector, kind)] in list order, the same way."""
-    return [(o, k) for o, k, _b in _listed(ob, "b4d_effectors", effector_kind)]
+    return [(o, k) for o, k, _b, _m in _listed(ob, "b4d_effectors", effector_kind)]
 
 
 def stamp(ob, kind, start=None):
@@ -231,6 +252,13 @@ def stamp(ob, kind, start=None):
         if key in ob:
             continue
         default, ui = SETTINGS[key]
+        if key == "b4d_fld_image":                    # an image picked from the file's images
+            ob[key] = None
+            try:
+                ob.id_properties_ui(key).update(id_type="IMAGE", description="The image whose brightness says where to act")
+            except (TypeError, KeyError):
+                pass
+            continue
         v = (start or {}).get(key, default)
         ob[key] = list(v) if isinstance(v, tuple) else v
         if ui:                                        # a menu setting is shown through its own Object property
@@ -277,7 +305,9 @@ def _effector_list(ob):
 def _signature(ob):
     k = object_kind(ob)
     parts = [ob.name, k, ",".join(c.name for c in kids_of(ob)),
-             ";".join(f"{e.name}:{ek}:" + ",".join(f"{f.name}/{b}" for f, _fk, b in fl) for e, ek, fl in _effector_list(ob))]
+             ";".join(f"{e.name}:{ek}:{e.get('b4d_eff_memory', 0)}:" +
+                      ",".join(f"{f.name}/{b}/{m}/{getattr(f.get('b4d_fld_image'), 'name', '')}" for f, _fk, b, m in fl)
+                      for e, ek, fl in _effector_list(ob))]
     if k == "voronoi_fracture":
         parts.append(f"{ob.get('b4d_vor_count')}:{ob.get('b4d_vor_seed')}")
         for c in kids_of(ob):
@@ -436,7 +466,9 @@ def _field_display(ob, kind):
             "linear_field": ("SINGLE_ARROW", ob.get("b4d_fld_length", 400.0) * mn.SCALE),
             "radial_field": ("CIRCLE", 1.0), "wave_field": ("CIRCLE", ob.get("b4d_fld_wavelength", 200.0) * mn.SCALE),
             "random_field": ("SPHERE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE),
-            "shader_field": ("CUBE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE)}[kind]
+            "shader_field": ("CUBE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE),
+            "image_field": ("CUBE", ob.get("b4d_fld_image_size", 400.0) * 0.5 * mn.SCALE),
+            "sound_field": ("SPHERE", 0.3)}[kind]
     if ob.empty_display_type != want[0]:
         ob.empty_display_type = want[0]
     if abs(ob.empty_display_size - want[1]) > 1e-6:
@@ -446,8 +478,9 @@ def _field_display(ob, kind):
 def _restart_trailing(ob):
     """A Delay Effector remembers past frames; when its settings change, that memory is dropped so the trailing is
     worked out again with the new values (Blender would otherwise keep showing the old frames)."""
-    key = ";".join(f"{e.name}:{e.get('b4d_eff_strength')}:{enabled(e)}:" + ",".join(f.name for f, _k, _b in fl)
-                   for e, k, fl in _effector_list(ob) if k == "delay_effector")
+    key = ";".join(f"{e.name}:{e.get('b4d_eff_strength')}:{e.get('b4d_eff_fade')}:{enabled(e)}:" +
+                   ",".join(f"{f.name}/{b}/{m}" for f, _k, b, m in fl)
+                   for e, k, fl in _effector_list(ob) if k == "delay_effector" or (fl and e.get("b4d_eff_memory")))
     if ob.get("b4d_delay_key", "") == key:
         return
     ob["b4d_delay_key"] = key
@@ -608,6 +641,8 @@ class BLENDA4D_PG_field_link(bpy.types.PropertyGroup):
                                       description="A Field that limits where this effector acts")
     use: bpy.props.BoolProperty(name="Use", default=True, update=_list_changed,
                                 description="Let this Field limit the effector; untick to leave it out for a while")
+    mix: bpy.props.FloatProperty(name="Mix", default=100.0, min=0.0, max=100.0, subtype="PERCENTAGE", precision=1,
+                                 update=_list_changed, description="How much of this Field goes into the reach")
     blend: bpy.props.EnumProperty(name="Combine", default="MAX", update=_list_changed, items=(
         ("MAX", "Max", "Where it reaches further than the Fields above, it wins"),
         ("ADD", "Add", "Adds its reach to the Fields above"),
@@ -677,6 +712,119 @@ class BLENDA4D_OT_link_slot(bpy.types.Operator):
                     lst.move(i, j)
                     setattr(ob, idx, j)
         sync_all()
+        return {"FINISHED"}
+
+
+# --- Image and Sound Fields: loading files -------------------------------------------------------------------------
+def _field_of(context, kind):
+    ob = context.view_layer.objects.active
+    return ob if field_kind(ob) == kind else None
+
+
+class BLENDA4D_OT_field_image(bpy.types.Operator):
+    bl_idname = "blenda4d.field_image"
+    bl_label = "Open Image"
+    bl_description = "Pick an image file for this Image Field"
+    bl_options = {"REGISTER", "UNDO"}
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_image: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
+    filter_folder: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        return _field_of(context, "image_field") is not None
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        try:
+            img = bpy.data.images.load(self.filepath, check_existing=True)
+        except RuntimeError as ex:
+            self.report({"ERROR"}, f"Could not open the image: {ex}")
+            return {"CANCELLED"}
+        _field_of(context, "image_field")["b4d_fld_image"] = img
+        sync_all()
+        return {"FINISHED"}
+
+
+def bake_sound(ob, scene):
+    """Write the sound's loudness at every frame into the Field's Level, as keyframes (so it plays in plain Blender
+    too). Loudness is the frame's average level, filtered to Low..High; a full-scale tone is 1."""
+    import aud
+    path = bpy.path.abspath(ob.get("b4d_fld_sound", ""))
+    snd = aud.Sound(path)
+    rate = float(snd.specs[0])
+    low, high = float(ob.get("b4d_fld_low", 20.0)), float(ob.get("b4d_fld_high", 20000.0))
+    if low > 20.0:
+        snd = snd.highpass(low)
+    if high < min(20000.0, rate / 2):
+        snd = snd.lowpass(high)
+    data = snd.data()
+    mono = data.mean(axis=1) if data.ndim > 1 else data
+    fps = scene.render.fps / scene.render.fps_base
+    per = rate / fps
+    frames = max(1, int(len(mono) / per))
+    levels = []
+    for i in range(frames):
+        part = mono[int(i * per):int((i + 1) * per)]
+        rms = float((part.astype("float64") ** 2).mean() ** 0.5) if len(part) else 0.0
+        levels.append(min(1.0, rms / 0.7071))
+    from bpy_extras import anim_utils
+    ob["b4d_fld_level"] = levels[0]
+    ob.keyframe_insert('["b4d_fld_level"]', frame=scene.frame_start)
+    ad = ob.animation_data
+    bag = anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot)
+    fc = next(f for f in bag.fcurves if f.data_path == '["b4d_fld_level"]')
+    fc.keyframe_points.clear()
+    fc.keyframe_points.add(len(levels))
+    co = []
+    for i, v in enumerate(levels):
+        co += [scene.frame_start + i, v]
+    fc.keyframe_points.foreach_set("co", co)
+    fc.keyframe_points.foreach_set("interpolation", [0] * len(levels))      # constant: one value per frame
+    fc.update()
+    ob.update_tag()
+    return len(levels)
+
+
+class BLENDA4D_OT_field_sound(bpy.types.Operator):
+    bl_idname = "blenda4d.field_sound"
+    bl_label = "Load Sound"
+    bl_description = "Pick a sound file and bake its loudness into this Sound Field, one value per frame"
+    bl_options = {"REGISTER", "UNDO"}
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    again: bpy.props.BoolProperty(options={"SKIP_SAVE", "HIDDEN"})
+    filter_sound: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
+    filter_movie: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
+    filter_folder: bpy.props.BoolProperty(default=True, options={"HIDDEN"})
+
+    @classmethod
+    def description(cls, context, props):
+        return ("Bake the loudness again (after changing Low or High)" if props.again else
+                "Pick a sound file and bake its loudness into this Sound Field, one value per frame")
+
+    @classmethod
+    def poll(cls, context):
+        return _field_of(context, "sound_field") is not None
+
+    def invoke(self, context, event):
+        if self.again:
+            return self.execute(context)
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        ob = _field_of(context, "sound_field")
+        if not self.again:
+            ob["b4d_fld_sound"] = self.filepath
+        try:
+            n = bake_sound(ob, context.scene)
+        except Exception as ex:
+            self.report({"ERROR"}, f"Could not read the sound: {ex}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Baked {n} frames of loudness")
         return {"FINISHED"}
 
 
@@ -859,6 +1007,24 @@ def page_fields(col, ob):
     col.use_property_split = False
     col.label(text="With Fields, the effector acts only where they reach")
     _list(col, ob, "b4d_fields", "Drag a Field here from the Object Manager, or select this and make one")
+    lst, i = ob.b4d_fields, ob.b4d_field_index
+    if 0 <= i < len(lst) and lst[i].object is not None:
+        row = lst[i]
+        box = col.column()
+        box.use_property_split = True
+        box.label(text=f"Row: {row.object.name}")
+        box.prop(row, "mix", text="Mix")
+        if i > 0:
+            box.prop(row, "blend", text="Combine")
+    if len(lst):
+        col.separator()
+        sub = col.column()
+        sub.use_property_split = True
+        sub.prop(ob, "b4d_eff_memory_ui", text="Remember")
+        if ob.get("b4d_eff_memory") == 2:
+            _row(sub, ob, "b4d_eff_fade", "Fade Time")
+        if ob.get("b4d_eff_memory"):
+            sub.label(text="Play from the first frame", icon="INFO")
 
 
 def _vec(col, ob, key, label):
@@ -944,6 +1110,24 @@ def page_field(col, ob):
         _row(col, ob, "b4d_fld_seed", "Seed")
     elif kind == "shader_field":
         _pattern_rows(col, ob, "b4d_fld")
+    elif kind == "image_field":
+        r = col.row(align=True)
+        r.prop(ob, '["b4d_fld_image"]', text="Image")
+        r.operator("blenda4d.field_image", text="", icon="FILEBROWSER")
+        _row(col, ob, "b4d_fld_image_size", "Size")
+        if not isinstance(ob.get("b4d_fld_image"), bpy.types.Image):
+            col.label(text="Pick or open an image: bright parts act, dark parts don't", icon="INFO")
+    elif kind == "sound_field":
+        r = col.row(align=True)
+        r.prop(ob, '["b4d_fld_sound"]', text="Sound")
+        r.operator("blenda4d.field_sound", text="", icon="FILEBROWSER")
+        _row(col, ob, "b4d_fld_low", "Low (Hz)")
+        _row(col, ob, "b4d_fld_high", "High (Hz)")
+        r = col.row()
+        r.enabled = bool(ob.get("b4d_fld_sound"))
+        r.operator("blenda4d.field_sound", text="Bake Again", icon="FILE_REFRESH").again = True
+        _row(col, ob, "b4d_fld_gain", "Gain")
+        col.label(text=f"Loudness at this frame: {100.0 * float(ob.get('b4d_fld_level', 0.0)):.0f} %", icon="SOUND")
     else:
         _row(col, ob, "b4d_fld_radius", "Radius")
         _row(col, ob, "b4d_fld_height", "Height")
@@ -981,6 +1165,10 @@ def _menus():
             ("SQUARE", "Square", "Jumps between the two ends"), ("SAW", "Saw", "Rises, then drops at once"))),
         "b4d_eff_pattern_ui": _menu("b4d_eff_pattern", "Pattern", _PATTERN_ITEMS),
         "b4d_fld_pattern_ui": _menu("b4d_fld_pattern", "Pattern", _PATTERN_ITEMS),
+        "b4d_eff_memory_ui": _menu("b4d_eff_memory", "Remember", (
+            ("OFF", "Off", "Each frame the Fields' reach is as it is now"),
+            ("KEEP", "Keep", "Once a Field has reached a piece, it stays reached"),
+            ("FADE", "Fade", "A reached piece lets go over Fade Time after the Field moves on"))),
     }
 
 
@@ -989,9 +1177,10 @@ PAGES = {"cloner": page_cloner, "matrix": page_matrix, "fracture": page_fracture
 
 
 # --- registration ----------------------------------------------------------------------------------------------------
-classes = (BLENDA4D_PG_effector_link, BLENDA4D_PG_field_link, BLENDA4D_UL_links, BLENDA4D_OT_link_slot)
+classes = (BLENDA4D_PG_effector_link, BLENDA4D_PG_field_link, BLENDA4D_UL_links, BLENDA4D_OT_link_slot,
+           BLENDA4D_OT_field_image, BLENDA4D_OT_field_sound)
 PROPS = ("b4d_effectors", "b4d_effector_index", "b4d_fields", "b4d_field_index", "b4d_eff_random_mode_ui",
-         "b4d_eff_wave_shape_ui", "b4d_eff_pattern_ui", "b4d_fld_pattern_ui")
+         "b4d_eff_wave_shape_ui", "b4d_eff_pattern_ui", "b4d_fld_pattern_ui", "b4d_eff_memory_ui")
 GROUP_OF = {**{k: "moclone" for k in OBJECTS}, **{k: "effectors" for k in EFFECTORS}, **{k: "fields" for k in FIELDS}}
 _saved = {}
 

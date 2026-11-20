@@ -159,6 +159,25 @@ def scene():
     cut.name = "Cut Box"
     cut.location = (-3.0, 0.0, 0.0)
     plain.b4d_fields[1].blend = "SUBTRACT"
+    plain.b4d_fields[1].mix = 70.0
+    plain.b4d_field_index = 1
+    plain["b4d_eff_memory"] = 2
+    plain["b4d_eff_fade"] = 1.5
+    # an Image Field with a small made-up picture, a Sound Field with a made-up tone baked in
+    img = bpy.data.images.new("Stripes", 8, 8)
+    img.pixels[:] = [v for i in range(64) for v in ((1.0,) * 3 if (i % 8) // 2 % 2 else (0.0,) * 3) + (1.0,)]
+    add("image_field", [])["b4d_fld_image"] = img
+    import math, struct, tempfile, wave
+    wav = os.path.join(tempfile.gettempdir(), "b4d_ui_tone.wav")
+    with wave.open(wav, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(22050)
+        w.writeframes(b"".join(struct.pack("<h", int(20000 * math.sin(2 * math.pi * 220 * i / 22050) *
+                                                       abs(math.sin(math.pi * i / 22050)))) for i in range(66150)))
+    snd = add("sound_field", [])
+    snd["b4d_fld_sound"] = wav
+    blenda4d.moclone.bake_sound(snd, bpy.context.scene)
     # a wave through the honeycomb, a pattern on the ring
     wave = add("wave_effector", [comb])
     wave["b4d_eff_position"] = [0.0, 40.0, 0.0]
@@ -294,7 +313,8 @@ for name, tab, setting in (
         ("Linear Field", "OBJECT", None), ("Spherical Field", "OBJECT", None),
         ("Box Field", "OBJECT", None), ("Random Field", "OBJECT", None), ("Cylinder Field", "OBJECT", None),
         ("Capsule Field", "OBJECT", None), ("Cone Field", "OBJECT", None), ("Torus Field", "OBJECT", None),
-        ("Radial Field", "OBJECT", None), ("Shader Field", "OBJECT", None), ("Wave Field", "OBJECT", None)):
+        ("Radial Field", "OBJECT", None), ("Shader Field", "OBJECT", None), ("Wave Field", "OBJECT", None),
+        ("Image Field", "OBJECT", None), ("Sound Field", "OBJECT", None)):
     if setting:
         PLAN += [lambda n=name, s=setting: put(n, *s)]
     tag = f"_{setting[0]}_{setting[1]}".replace(" ", "") if setting else ""

@@ -17,12 +17,14 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 In: the Cloner (Linear, Grid with box, ball and cylinder forms, Radial, Honeycomb, Object), Matrix, Fracture, Voronoi
 Fracture and Tracer; the Random (Uniform, Gaussian, Noise), Plain, Shader, Delay, Wave, Step, Target (with Keep
 Upright) and Time effectors; the Linear, Spherical, Box, Cylinder, Capsule, Cone, Torus, Radial, Random, Shader and
-Wave Fields, combined per row (Max, Add, Subtract, Multiply, Min). Effector and Field lists take drops from the Object
-Manager and have a check box per row. Still to do:
+Wave Fields, plus the Image Field (an image's brightness) and the Sound Field (a sound file's loudness, filtered between
+Low and High and baked to one keyframe per frame), combined per row (Max, Add, Subtract, Multiply, Min) with a Mix per
+row. An effector can make its Fields remember: Keep holds what they reached, Fade lets go over a set time. Effector and
+Field lists take drops from the Object Manager and have a check box per row. Still to do:
 - Effectors: a Formula effector (typed expressions), colour from a gradient, effectors acting on the child's own
   animation time, Delay modes (spring, ease), the Shader Effector reading a material or image.
-- Fields: sound, a Field from an image or a material, Fields that remember (freeze, decay), Field layers per effector
-  with their own strength.
+- Fields: a Field from a material (only images today), the Image Field with movies and image sequences, Remember
+  with spreading (growth into neighbours), Field groups (a Field holding other Fields).
 - A Null with objects under it copied as one clone (only objects with geometry are copied today).
 - More Cloner modes and options: spirals, copies inside a volume, Object mode reading the object's own selections,
   more Clone Order options (blend between children, sorted by index).

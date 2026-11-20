@@ -516,6 +516,16 @@ def field_weight(g, ob, kind, at):
         w = g.m("ADD", 0.5, g.m("MULTIPLY", 0.5, g.m("COSINE", g.m("MULTIPLY", phase, 2 * math.pi))))
     elif kind == "shader_field":
         w = pattern(g, ob, "b4d_fld", p)
+    elif kind == "image_field":                       # an image laid flat (looking down the Field's shown Y), Size wide
+        size = cm("b4d_fld_image_size")
+        tex = g.node("GeometryNodeImageTexture", extension="CLIP", interpolation="Linear")
+        img = ob.get("b4d_fld_image")
+        if isinstance(img, bpy.types.Image):
+            tex.inputs["Image"].default_value = img
+        g.l.new(g.xyz(g.m("ADD", g.m("DIVIDE", x, size), 0.5), g.m("ADD", g.m("DIVIDE", y, size), 0.5), 0.0), tex.inputs["Vector"])
+        w = g.clamp(g.m("MULTIPLY", tex.outputs["Color"], tex.outputs["Alpha"]))   # a colour read as a number is its brightness
+    elif kind == "sound_field":                       # everywhere, as loud as the sound is at this frame
+        w = g.clamp(g.m("MULTIPLY", driven(g, ob, "b4d_fld_level"), driven(g, ob, "b4d_fld_gain", scale=0.01)))
     else:                                             # random_field: smooth noise that can move
         w = pattern(g, ob, "b4d_fld", p, which=0)
     inv_on = driven(g, ob, "b4d_fld_invert")
@@ -529,8 +539,8 @@ def fields_weight(g, fields, at):
     if not fields:
         return None
     acc, any_on = None, 0.0
-    for ob, kind, blend in fields:
-        on = driven(g, ob, "_b4d_enabled")
+    for ob, kind, blend, mix in fields:
+        on = g.m("MULTIPLY", driven(g, ob, "_b4d_enabled"), float(mix) / 100.0)   # the row's Mix scales it
         w = field_weight(g, ob, kind, at)
         v = g.m("MULTIPLY", w, on)                                   # off: adds nothing
         v1 = g.m("ADD", 1.0, g.m("MULTIPLY", on, g.m("SUBTRACT", w, 1.0)))   # off: multiplies by 1
@@ -546,7 +556,7 @@ def fields_weight(g, fields, at):
             acc = g.m("MINIMUM", acc, v1)
         else:
             acc = g.m("MAXIMUM", acc, v)
-        any_on = g.m("MAXIMUM", any_on, on)
+        any_on = g.m("MAXIMUM", any_on, driven(g, ob, "_b4d_enabled"))
     return g.m("ADD", 1.0, g.m("MULTIPLY", any_on, g.m("SUBTRACT", g.clamp(acc), 1.0)))
 
 
@@ -674,11 +684,40 @@ def _delay(g, geo, s):
     return sout.outputs["Geometry"]
 
 
+_NOW, _KEPT = ".b4d_fields_now", ".b4d_fields_kept"
+
+
+def _remember(g, geo, fw, mode, ob):
+    """Fields that remember: Keep holds each piece at the most the Fields ever gave it; Fade lets that fall back
+    to the Fields' reach over Fade Time. Returns the geometry and the weight to use on it."""
+    now = g.store(geo, _NOW, fw, "FLOAT", "INSTANCE")
+    sin, sout = g.node("GeometryNodeSimulationInput"), g.node("GeometryNodeSimulationOutput")
+    sin.pair_with_output(sout)
+    g.l.new(now, sin.inputs[0])
+    was = g.node("GeometryNodeSampleIndex", data_type="FLOAT", domain="INSTANCE")
+    g.l.new(sin.outputs["Geometry"], was.inputs["Geometry"])
+    g.l.new(g.named(_KEPT, "FLOAT"), was.inputs["Value"])
+    g.l.new(g.index(), was.inputs["Index"])
+    keep = 1.0 if mode == 1 else g.m("MAXIMUM", g.m("SUBTRACT", 1.0, g.m(
+        "DIVIDE", sin.outputs["Delta Time"], g.m("MAXIMUM", driven(g, ob, "b4d_eff_fade"), 1e-3))), 0.0)
+    kept = g.m("MAXIMUM", g.named(_NOW, "FLOAT"), g.m("MULTIPLY", was.outputs[0], keep))
+    g.l.new(g.store(now, _KEPT, kept, "FLOAT", "INSTANCE"), sout.inputs["Geometry"])
+    return sout.outputs["Geometry"], g.named(_KEPT, "FLOAT")
+
+
 def effector_stage(g, geo, ob, kind, fields):
     """Change the pieces in geo by one effector, limited to where its Fields reach."""
+    out = _stage(g, geo, ob, kind, fields)
+    return g.drop_attrs(out, _NOW, _KEPT) if fields and int(ob.get("b4d_eff_memory", 0)) else out
+
+
+def _stage(g, geo, ob, kind, fields):
     s = strength(g, ob, "b4d_eff_strength")
     fw = fields_weight(g, fields, _instance_xf(g).outputs["Translation"])
     if fw is not None:
+        mode = int(ob.get("b4d_eff_memory", 0))
+        if mode:
+            geo, fw = _remember(g, geo, fw, mode, ob)
         s = g.m("MULTIPLY", s, fw)
     if kind == "target_effector":
         return _target(g, geo, ob, s)
