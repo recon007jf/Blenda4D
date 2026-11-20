@@ -7,14 +7,24 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 1. **Timeline**: the full animation workflow. A keyframe editor docked above the transport row, a curve editor, framing
    all, selected or current keys, key pages (interpolation, tangents, what happens before and after the keys), and
    jumping to or deleting keys from any setting. Today's timeline is the transport row only.
-2. **Cloning tools (MoClone)**: copies of objects arranged in grids, circles, along splines and over surfaces; objects
-   broken into pieces; and effectors and fields that vary the copies' position, size and colour. Their create-column
-   buttons are already there, greyed.
+2. **Breaking objects into pieces (Fracture, Voronoi Fracture)** and **Fields** that fade an effector out over space.
+   Their create-column buttons are there, greyed.
 
 ## Splines (`splines.py`)
 - Our own point-editing tools (Blender's curve edit mode and Pen stand in today).
 - More ways to space the points along a curve (only even spacing today).
 - More shapes, and gears with shaped teeth.
+
+## MoClone (`moclone.py`)
+The Cloner (Linear, Grid, Radial, Object) and the Random, Step, Target and Time effectors are in. Still to do:
+- Matrix (the Cloner's layout as points, without copies), Tracer (lines through moving objects), Delay Effector.
+- A Null with objects under it copied as one clone (only objects with geometry are copied today).
+- More Cloner modes and options: Honeycomb, spirals, a Linear "end point" instead of a step, per-axis grid shapes
+  (sphere, cylinder), copies on a volume, and Object mode reading the object's own selections.
+- More Clone Order options (blend between children, sorted by index).
+- Effectors: Plain, Shader and Formula effectors; Target with an up direction and a target object field; Random
+  modes (noise, Gaussian); colour from a gradient; effectors acting on the child's own animation time.
+- Drag handles in the viewport for Count and spacing.
 
 ## Generators (`generators.py`)
 - More Sweep options: guide curves, scale and twist along the path, finer UV control.
