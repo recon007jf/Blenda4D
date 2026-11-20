@@ -185,12 +185,20 @@ def test_rows():
 
 EFFECTOR_ROWS = {   # each row and a value that must change the copies
     "random_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 80.0, 0.0)), ("b4d_eff_rotation", (0.5, 0.0, 0.0)),
-                        ("b4d_eff_scale", (50.0, 0.0, 0.0)), ("b4d_eff_seed", 9), ("b4d_eff_use_color", True)],
+                        ("b4d_eff_scale", (50.0, 0.0, 0.0)), ("b4d_eff_seed", 9), ("b4d_eff_random_mode", 1),
+                        ("b4d_eff_random_mode", 2), ("b4d_eff_use_color", True)],
+    "shader_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
+                        ("b4d_eff_scale", (0.0, 50.0, 0.0)), ("b4d_eff_pattern", 1), ("b4d_eff_pattern", 2), ("b4d_eff_pattern", 3),
+                        ("b4d_eff_noise_size", 60.0), ("b4d_eff_contrast", 20.0), ("b4d_eff_seed", 5),
+                        ("b4d_eff_use_color", True)],
+    "wave_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
+                      ("b4d_eff_scale", (0.0, 50.0, 0.0)), ("b4d_eff_wave_shape", 1), ("b4d_eff_wave_shape", 2),
+                      ("b4d_eff_wave_shape", 3), ("b4d_eff_frequency", 1.3), ("b4d_eff_spread", 2.5), ("b4d_eff_use_color", True)],
     "step_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 80.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.0, 0.7)),
                       ("b4d_eff_scale", (0.0, 30.0, 0.0)), ("b4d_eff_use_color", True)],
     "plain_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (0.0, 30.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.4, 0.0)),
                        ("b4d_eff_scale", (0.0, 50.0, 0.0)), ("b4d_eff_use_color", True)],
-    "target_effector": [("b4d_eff_strength", 40.0)],
+    "target_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_upright", True)],
     "time_effector": [("b4d_eff_strength", 40.0), ("b4d_eff_position", (10.0, 0.0, 0.0)), ("b4d_eff_rotation", (0.0, 0.3, 0.0)),
                       ("b4d_eff_scale", (20.0, 20.0, 20.0))],
 }
@@ -245,6 +253,15 @@ def test_effector(kind):
             check(result(c) != before, "row b4d_eff_color")
         else:
             setv(e, key, old)
+    if kind in ("random_effector", "shader_effector"):     # Speed: the pattern (Random in Noise mode) moves in time
+        if kind == "random_effector":
+            setv(e, "b4d_eff_random_mode", 2)
+        before = result(c)
+        setv(e, "b4d_eff_speed", 3.0)
+        check(result(c) != before, "row b4d_eff_speed")
+        setv(e, "b4d_eff_speed", 1.0)
+        if kind == "random_effector":
+            setv(e, "b4d_eff_random_mode", 0)
     e["_b4d_enabled"] = False
     e.update_tag()
     check(result(c) == base, "check mark off: the copies are as without it")
@@ -396,12 +413,24 @@ def test_drop():
     check(not M.drop(bpy.context, Ev(), [plain], c.name), "a plain object dropped on the Cloner is left to the Object Manager")
     select()
     f = add("box_field")
-    check(M.drop(bpy.context, Ev(), [f], e.name) and [o for o, _k in M.fields_of(e)] == [f],
+    check(M.drop(bpy.context, Ev(), [f], e.name) and [x[0] for x in M.fields_of(e)] == [f],
           "a Field dropped on an effector's row goes into its Fields list")
     check(not M.drop(bpy.context, Ev(), [f], c.name), "a Field dropped on a Cloner is not taken")
 
 
+AXIS_X = (0.0, 1.5708, 0.0)                         # the Field's up axis (shown Y, Blender Z) along the row of copies
+FIELD_POSE = {"linear_field": ((0.0, 0.0, 0.0), (0.0, 0.0, -1.5708)), "cylinder_field": ((0.0, 1.0, 0.0), AXIS_X),
+              "capsule_field": ((0.0, 1.0, 0.0), AXIS_X), "cone_field": ((0.0, 0.5, 0.0), AXIS_X),
+              "radial_field": ((4.0, -1.0, 0.0), (0.0, 0.0, 0.0))}
 FIELD_ROWS = {
+    "cylinder_field": [("b4d_fld_radius", 20.0), ("b4d_fld_height", 150.0), ("b4d_fld_falloff", 90.0)],
+    "capsule_field": [("b4d_fld_radius", 20.0), ("b4d_fld_height", 900.0), ("b4d_fld_falloff", 90.0)],
+    "cone_field": [("b4d_fld_radius", 900.0), ("b4d_fld_height", 300.0), ("b4d_fld_falloff", 90.0)],
+    "torus_field": [("b4d_fld_radius", 500.0), ("b4d_fld_tube", 160.0), ("b4d_fld_falloff", 90.0)],
+    "radial_field": [("b4d_fld_sweep", 1.0)],
+    "shader_field": [("b4d_fld_pattern", 1), ("b4d_fld_pattern", 2), ("b4d_fld_pattern", 3), ("b4d_fld_noise_size", 60.0),
+                     ("b4d_fld_seed", 4), ("b4d_fld_contrast", 20.0), ("b4d_fld_speed", 2.0)],
+    "wave_field": [("b4d_fld_wavelength", 130.0), ("b4d_fld_speed", 2.0)],
     "spherical_field": [("b4d_fld_radius", 120.0), ("b4d_fld_falloff", 90.0)],
     "box_field": [("b4d_fld_size", (180.0, 400.0, 200.0)), ("b4d_fld_falloff", 90.0)],
     "linear_field": [("b4d_fld_length", 900.0)],
@@ -419,10 +448,12 @@ def test_field(kind):
     e = add("plain_effector", c)
     full = result(c)
     f = add(kind, e)
-    check([o for o, _k in M.fields_of(e)] == [f], "made with the effector selected: in its Fields list")
-    if kind == "linear_field":
-        f.rotation_euler = (0.0, 0.0, -1.5708)          # its Z (shown) along the row
-    f.location = (0.0, 0.0, 0.0)
+    check([x[0] for x in M.fields_of(e)] == [f], "made with the effector selected: in its Fields list")
+    loc, rot = FIELD_POSE.get(kind, ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    f.location, f.rotation_euler = loc, rot
+    if kind == "torus_field":
+        setv(f, "b4d_fld_radius", 250.0)
+        setv(f, "b4d_fld_tube", 100.0)
     bpy.context.scene.frame_set(12)
     limited = result(c)
     check(limited != full and limited != base, "the effector now acts on some copies, not all of them the same")
@@ -439,7 +470,7 @@ def test_field(kind):
             setv(f, key, v)
             check(result(c) != before, f"row {key}")
         setv(f, key, old)
-    if kind != "random_field":
+    if kind not in ("random_field", "shader_field", "wave_field"):
         f.location.x += 3.0
         check(result(c) != limited, "moving the Field moves where the effector acts")
         f.location.x -= 3.0
@@ -469,6 +500,29 @@ def test_two_fields():
     check(result(c) != one, "a second Field adds the places it reaches")
     e.b4d_fields[1].use = False
     check(result(c) == one, "...and leaving it out takes them away again")
+
+
+def test_field_blends():
+    print("== Field blend modes")
+    clear()
+    c = add("cloner", cube())
+    M.put(c, "Count", 9)
+    e = add("plain_effector", c)
+    a = add("spherical_field", e)
+    setv(a, "b4d_fld_radius", 300.0)
+    setv(a, "b4d_fld_falloff", 90.0)
+    b = add("box_field", e)
+    b.location = (2.0, 0.0, 0.0)                      # overlapping the ball, both with soft edges
+    setv(b, "b4d_fld_size", (400.0, 400.0, 400.0))
+    setv(b, "b4d_fld_falloff", 90.0)
+    seen = {}
+    for blend in ("MAX", "ADD", "SUBTRACT", "MULTIPLY", "MIN"):
+        e.b4d_fields[1].blend = blend
+        seen[blend] = result(c)
+    check(len(set(seen.values())) == 5, f"every way of combining gives its own result ({len(set(seen.values()))} of 5)")
+    e.b4d_fields[0].blend = "SUBTRACT"
+    e.b4d_fields[1].blend = "MAX"
+    check(result(c) == seen["MAX"], "the first row's way of combining does nothing (it starts the reach)")
 
 
 def test_matrix():
@@ -645,7 +699,7 @@ def test_delay():
 EFFECTOR_TESTS = [(lambda k: lambda: test_effector(k))(k) for k in M.EFFECTOR_ORDER if k != "delay_effector"]
 FIELD_TESTS = [(lambda k: lambda: test_field(k))(k) for k in M.FIELD_ORDER]
 for t in (test_cloner_basics, test_rows, test_more_layouts, *EFFECTOR_TESTS, test_list_checkboxes, test_drop,
-          *FIELD_TESTS, test_two_fields, test_two_cloners_one_effector, test_matrix, test_fracture, test_voronoi,
+          *FIELD_TESTS, test_two_fields, test_field_blends, test_two_cloners_one_effector, test_matrix, test_fracture, test_voronoi,
           test_tracer, test_delay, test_switch):
     try:
         t()

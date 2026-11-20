@@ -431,7 +431,41 @@ def _instance_xf(g):
     return xf
 
 
+# --- patterns: smooth noise, cells, waves or a checker, shared by the Shader Effector and the Shader and Random Fields --
+PATTERNS = [("Noise", 0), ("Cells", 1), ("Waves", 2), ("Checker", 3)]
+
+
+def pattern(g, ob, prefix, p, which=None):
+    """0..1 from a pattern at the place p (metres), sized, seeded, moving and sharpened by ob's settings."""
+    size = g.m("MAXIMUM", driven(g, ob, prefix + "_noise_size", scale=SCALE), 1e-6)
+    q = g.scaled(g.v("ADD", p, g.xyz(driven(g, ob, prefix + "_seed", scale=7.31), 0.0, 0.0)), g.m("DIVIDE", 1.0, size))
+    t = g.m("MULTIPLY", g.node("GeometryNodeInputSceneTime").outputs["Seconds"], driven(g, ob, prefix + "_speed"))
+    noise = g.node("ShaderNodeTexNoise", noise_dimensions="4D")
+    g.l.new(q, noise.inputs["Vector"])
+    g.l.new(t, noise.inputs["W"])
+    noise.inputs["Detail"].default_value = 1.0
+    cells = g.node("ShaderNodeTexVoronoi", voronoi_dimensions="4D")
+    g.l.new(q, cells.inputs["Vector"])
+    g.l.new(t, cells.inputs["W"])
+    waves = g.node("ShaderNodeTexWave", wave_type="BANDS")
+    g.l.new(g.v("ADD", q, g.xyz(t, 0.0, 0.0)), waves.inputs["Vector"])
+    waves.inputs["Scale"].default_value = 1.0
+    waves.inputs["Distortion"].default_value = 0.0
+    checker = g.node("ShaderNodeTexChecker")
+    g.l.new(g.v("ADD", q, g.xyz(t, 0.0, 0.0)), checker.inputs["Vector"])
+    checker.inputs["Scale"].default_value = 1.0
+    checker.inputs["Color1"].default_value = (1.0, 1.0, 1.0, 1.0)
+    checker.inputs["Color2"].default_value = (0.0, 0.0, 0.0, 1.0)
+    value = g.switch("FLOAT", which if which is not None else driven(g, ob, prefix + "_pattern"),
+                     [noise.outputs["Factor"], g.clamp(cells.outputs["Distance"]), waves.outputs["Factor"],
+                      checker.outputs["Factor"]])
+    return g.clamp(g.m("ADD", g.m("MULTIPLY", g.m("SUBTRACT", value, 0.5), driven(g, ob, prefix + "_contrast", scale=0.04)), 0.5))
+
+
 # --- fields: where an effector acts -----------------------------------------------------------------------------------
+BLENDS = ("MAX", "ADD", "SUBTRACT", "MULTIPLY", "MIN")
+
+
 def field_weight(g, ob, kind, at):
     """0..1 for one Field at the place `at` (in the group object's space)."""
     info = g.info(ob)
@@ -440,60 +474,138 @@ def field_weight(g, ob, kind, at):
     tp = g.node("FunctionNodeTransformPoint")
     g.put(at, tp.inputs["Vector"])
     g.l.new(inv.outputs[0], tp.inputs["Transform"])
-    p = tp.outputs[0]                                  # in the Field's own space, metres
+    p = tp.outputs[0]                                  # in the Field's own space, metres; shown Y is Blender Z
+    x, y, z = g.sep(p)
     soft = g.m("MAXIMUM", driven(g, ob, "b4d_fld_falloff", scale=0.01), 1e-4)
 
     def edge(d):                                      # 1 inside, fading to 0 over the soft edge, 0 past 1
         return g.clamp(g.m("DIVIDE", g.m("SUBTRACT", 1.0, d), soft))
+
+    def cm(key):
+        return g.m("MAXIMUM", driven(g, ob, key, scale=SCALE), 1e-6)
+    r_flat = g.m("SQRT", g.m("ADD", g.m("MULTIPLY", x, x), g.m("MULTIPLY", y, y)))   # distance from the up axis
     if kind == "spherical_field":
-        w = edge(g.m("DIVIDE", g.v("LENGTH", p), g.m("MAXIMUM", driven(g, ob, "b4d_fld_radius", scale=SCALE), 1e-6)))
+        w = edge(g.m("DIVIDE", g.v("LENGTH", p), cm("b4d_fld_radius")))
     elif kind == "box_field":
         half = _shown_vec(g, ob, "b4d_fld_size", 0.5 * SCALE)
         q = g.sep(g.v("DIVIDE", g.v("ABSOLUTE", p), g.v("MAXIMUM", half, (1e-6, 1e-6, 1e-6))))
         w = edge(g.m("MAXIMUM", g.m("MAXIMUM", q[0], q[1]), q[2]))
+    elif kind == "cylinder_field":                    # upright along the Field's shown Y
+        w = edge(g.m("MAXIMUM", g.m("DIVIDE", r_flat, cm("b4d_fld_radius")),
+                     g.m("DIVIDE", g.m("ABSOLUTE", z), g.m("MULTIPLY", cm("b4d_fld_height"), 0.5))))
+    elif kind == "capsule_field":                     # a cylinder with round ends, Height from end to end
+        reach = g.m("MAXIMUM", g.m("SUBTRACT", g.m("MULTIPLY", cm("b4d_fld_height"), 0.5), cm("b4d_fld_radius")), 0.0)
+        zc = g.m("MINIMUM", g.m("MAXIMUM", z, g.m("MULTIPLY", reach, -1.0)), reach)
+        w = edge(g.m("DIVIDE", g.v("LENGTH", g.v("SUBTRACT", p, g.xyz(0.0, 0.0, zc))), cm("b4d_fld_radius")))
+    elif kind == "cone_field":                        # point at the Field, opening up its shown Y to Radius at Height
+        h = cm("b4d_fld_height")
+        open_r = g.m("MAXIMUM", g.m("MULTIPLY", cm("b4d_fld_radius"), g.m("DIVIDE", z, h)), 1e-6)
+        d = g.m("MAXIMUM", g.m("DIVIDE", r_flat, open_r), g.m("DIVIDE", z, h))
+        w = edge(g.m("MAXIMUM", d, g.m("MULTIPLY", g.m("LESS_THAN", z, 0.0), 2.0)))
+    elif kind == "torus_field":                       # a ring around the Field's shown Y
+        ring = g.m("SUBTRACT", r_flat, cm("b4d_fld_radius"))
+        w = edge(g.m("DIVIDE", g.m("SQRT", g.m("ADD", g.m("MULTIPLY", ring, ring), g.m("MULTIPLY", z, z))), cm("b4d_fld_tube")))
+    elif kind == "radial_field":                      # 0 to 1 going round the Field's shown Y, over Sweep
+        a = g.m("FLOORED_MODULO", g.m("ARCTAN2", y, x), 2 * math.pi)
+        w = g.clamp(g.m("DIVIDE", a, g.m("MAXIMUM", driven(g, ob, "b4d_fld_sweep"), 1e-6)))
     elif kind == "linear_field":                      # 0 at the Field, 1 one Length along its shown Z (Blender Y)
-        w = g.clamp(g.m("DIVIDE", g.sep(p)[1], g.m("MAXIMUM", driven(g, ob, "b4d_fld_length", scale=SCALE), 1e-6)))
-    else:                                             # random_field: a smooth noise pattern that can move
-        noise = g.node("ShaderNodeTexNoise", noise_dimensions="4D")
-        g.l.new(g.scaled(g.v("ADD", p, g.xyz(driven(g, ob, "b4d_fld_seed", scale=7.31), 0.0, 0.0)),
-                         g.m("DIVIDE", 1.0, g.m("MAXIMUM", driven(g, ob, "b4d_fld_noise_size", scale=SCALE), 1e-6))),
-                noise.inputs["Vector"])
-        g.l.new(g.m("MULTIPLY", g.node("GeometryNodeInputSceneTime").outputs["Seconds"],
-                    driven(g, ob, "b4d_fld_speed")), noise.inputs["W"])
-        noise.inputs["Detail"].default_value = 1.0
-        w = g.clamp(g.m("ADD", g.m("MULTIPLY", g.m("SUBTRACT", noise.outputs["Factor"], 0.5),
-                                   driven(g, ob, "b4d_fld_contrast", scale=0.04)), 0.5))
+        w = g.clamp(g.m("DIVIDE", y, cm("b4d_fld_length")))
+    elif kind == "wave_field":                        # rings going out from the Field
+        phase = g.m("SUBTRACT", g.m("DIVIDE", g.v("LENGTH", p), cm("b4d_fld_wavelength")),
+                    g.m("MULTIPLY", g.node("GeometryNodeInputSceneTime").outputs["Seconds"], driven(g, ob, "b4d_fld_speed")))
+        w = g.m("ADD", 0.5, g.m("MULTIPLY", 0.5, g.m("COSINE", g.m("MULTIPLY", phase, 2 * math.pi))))
+    elif kind == "shader_field":
+        w = pattern(g, ob, "b4d_fld", p)
+    else:                                             # random_field: smooth noise that can move
+        w = pattern(g, ob, "b4d_fld", p, which=0)
     inv_on = driven(g, ob, "b4d_fld_invert")
     w = g.m("ADD", w, g.m("MULTIPLY", inv_on, g.m("SUBTRACT", 1.0, g.m("MULTIPLY", w, 2.0))))
     return g.m("MULTIPLY", w, strength(g, ob, "b4d_fld_strength"))
 
 
 def fields_weight(g, fields, at):
-    """The strongest of the Fields at `at`; 1 everywhere when there are none or all are switched off."""
+    """The Fields combined in list order, each row by its own way (Max, Add, Subtract, Multiply, Min); 1 everywhere
+    when there are none or all are switched off."""
     if not fields:
         return None
-    best, any_on = 0.0, 0.0
-    for ob, kind in fields:
+    acc, any_on = None, 0.0
+    for ob, kind, blend in fields:
         on = driven(g, ob, "_b4d_enabled")
-        best = g.m("MAXIMUM", best, g.m("MULTIPLY", field_weight(g, ob, kind, at), on))
+        w = field_weight(g, ob, kind, at)
+        v = g.m("MULTIPLY", w, on)                                   # off: adds nothing
+        v1 = g.m("ADD", 1.0, g.m("MULTIPLY", on, g.m("SUBTRACT", w, 1.0)))   # off: multiplies by 1
+        if acc is None:
+            acc = v
+        elif blend == "ADD":
+            acc = g.m("ADD", acc, v)
+        elif blend == "SUBTRACT":
+            acc = g.m("SUBTRACT", acc, v)
+        elif blend == "MULTIPLY":
+            acc = g.m("MULTIPLY", acc, v1)
+        elif blend == "MIN":
+            acc = g.m("MINIMUM", acc, v1)
+        else:
+            acc = g.m("MAXIMUM", acc, v)
         any_on = g.m("MAXIMUM", any_on, on)
-    return g.m("ADD", 1.0, g.m("MULTIPLY", any_on, g.m("SUBTRACT", best, 1.0)))
+    return g.m("ADD", 1.0, g.m("MULTIPLY", any_on, g.m("SUBTRACT", g.clamp(acc), 1.0)))
 
 
 # --- effectors -------------------------------------------------------------------------------------------------------
+def _count(g, geo):
+    size = g.node("GeometryNodeAttributeDomainSize", component="INSTANCES")
+    g.l.new(geo, size.inputs["Geometry"])
+    return size.outputs["Instance Count"]
+
+
+def _random_weights(g, ob):
+    """Uniform: anywhere in -1..1; Gaussian: mostly near 0, now and then far; Noise: smooth, changing over time."""
+    seed, mode = driven(g, ob, "b4d_eff_seed"), driven(g, ob, "b4d_eff_random_mode")
+
+    def uniform(k):
+        return g.random("FLOAT_VECTOR", (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0), g.m("ADD", seed, k * 7919))
+
+    def bell(k):
+        return g.scaled(g.v("ADD", g.v("ADD", uniform(k), uniform(k + 11)), uniform(k + 23)), 0.6)
+
+    def smooth(k):
+        n = g.node("ShaderNodeTexNoise", noise_dimensions="4D")
+        g.l.new(g.xyz(g.m("MULTIPLY", g.index(), 1.37), g.m("ADD", seed, k * 3.1), 0.5), n.inputs["Vector"])
+        g.l.new(g.m("MULTIPLY", g.node("GeometryNodeInputSceneTime").outputs["Seconds"], driven(g, ob, "b4d_eff_speed")), n.inputs["W"])
+        n.inputs["Detail"].default_value = 0.0
+        return g.v("SUBTRACT", g.scaled(n.outputs["Color"], 4.0), (2.0, 2.0, 2.0))      # about -1..1, centred
+    out = [g.switch("VECTOR", mode, [uniform(k), bell(k), smooth(k)]) for k in range(3)]
+    colour = g.random("FLOAT", 0.0, 1.0, g.m("ADD", seed, 3 * 7919))
+    return out[0], out[1], out[2], colour
+
+
+def _wave(g, geo, ob):
+    """A repeating wave over time and along the copies: Sine, Triangle, Square or Saw, in -1..1."""
+    x = g.m("ADD", g.m("MULTIPLY", driven(g, ob, "b4d_eff_frequency"), g.node("GeometryNodeInputSceneTime").outputs["Seconds"]),
+            g.m("MULTIPLY", driven(g, ob, "b4d_eff_spread"), g.m("DIVIDE", g.index(), g.m("MAXIMUM", _count(g, geo), 1.0))))
+    f = g.m("FRACT", x)
+    sine = g.m("SINE", g.m("MULTIPLY", x, 2 * math.pi))
+    tri = g.m("SUBTRACT", g.m("MULTIPLY", g.m("ABSOLUTE", g.m("SUBTRACT", g.m("FRACT", g.m("ADD", x, 0.25)), 0.5)), 4.0), 1.0)
+    square = g.m("SIGN", sine)
+    saw = g.m("SUBTRACT", g.m("MULTIPLY", f, 2.0), 1.0)
+    return g.switch("FLOAT", driven(g, ob, "b4d_eff_wave_shape"), [sine, tri, square, saw])
+
+
 def _weights(g, geo, ob, kind):
-    """(position, rotation, size, colour) weights per piece: vectors for the first three, a number for colour."""
+    """(position, rotation, size, colour) weights per piece: vectors or numbers for the first three, a number for
+    colour (None: no colour rows)."""
     if kind == "random_effector":
-        seed = driven(g, ob, "b4d_eff_seed")
-        r = [g.random("FLOAT_VECTOR", (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0), g.m("ADD", seed, k * 7919)) for k in range(3)]
-        return r[0], r[1], r[2], g.random("FLOAT", 0.0, 1.0, g.m("ADD", seed, 3 * 7919))
+        return _random_weights(g, ob)
     if kind == "step_effector":
-        size = g.node("GeometryNodeAttributeDomainSize", component="INSTANCES")
-        g.l.new(geo, size.inputs["Geometry"])
-        f = g.m("DIVIDE", g.index(), g.m("MAXIMUM", g.m("SUBTRACT", size.outputs["Instance Count"], 1.0), 1.0))
+        f = g.m("DIVIDE", g.index(), g.m("MAXIMUM", g.m("SUBTRACT", _count(g, geo), 1.0), 1.0))
         return f, f, f, f
     if kind == "plain_effector":
         return 1.0, 1.0, 1.0, 1.0
+    if kind == "shader_effector":
+        f = pattern(g, ob, "b4d_eff", _instance_xf(g).outputs["Translation"])
+        return f, f, f, f
+    if kind == "wave_effector":
+        w = _wave(g, geo, ob)
+        return w, w, w, g.m("MULTIPLY", g.m("ADD", w, 1.0), 0.5)
     t = g.node("GeometryNodeInputSceneTime").outputs["Seconds"]     # time_effector: the values are per second
     return t, t, t, None
 
@@ -506,16 +618,25 @@ def _vec_mul(g, a, b):
 
 
 def _target(g, geo, ob, s):
-    """Each piece turns its shown Z (Blender Y) toward the effector, by Strength."""
+    """Each piece turns its shown Z (Blender Y) toward the effector, by Strength; with Keep Upright it then turns
+    about that axis so its shown Y (Blender Z) points up as far as it can."""
     info = g.info(ob)
     xf = _instance_xf(g)
     aim = g.node("FunctionNodeAlignRotationToVector", axis="Y")
     g.l.new(xf.outputs["Rotation"], aim.inputs["Rotation"])
     g.put(s, aim.inputs["Factor"])
     g.l.new(g.v("SUBTRACT", info.outputs["Location"], xf.outputs["Translation"]), aim.inputs["Vector"])
+    up = g.node("FunctionNodeAlignRotationToVector", axis="Z", pivot_axis="Y")
+    g.l.new(aim.outputs[0], up.inputs["Rotation"])
+    g.put(s, up.inputs["Factor"])
+    up.inputs["Vector"].default_value = (0.0, 0.0, 1.0)
+    mix = g.node("ShaderNodeMix", data_type="ROTATION", clamp_factor=True)
+    g.l.new(driven(g, ob, "b4d_eff_upright"), mix.inputs[0])
+    g.l.new(aim.outputs[0], mix.inputs[8])
+    g.l.new(up.outputs[0], mix.inputs[9])
     comb = g.node("FunctionNodeCombineTransform")
     g.l.new(xf.outputs["Translation"], comb.inputs["Translation"])
-    g.l.new(aim.outputs[0], comb.inputs["Rotation"])
+    g.l.new(mix.outputs[3], comb.inputs["Rotation"])
     g.l.new(xf.outputs["Scale"], comb.inputs["Scale"])
     st = g.node("GeometryNodeSetInstanceTransform")
     g.l.new(geo, st.inputs["Instances"])

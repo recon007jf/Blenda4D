@@ -62,8 +62,13 @@ EFFECTORS = {
     "target_effector": ("Target Effector", "TRACKER", "Turn the pieces so they face this effector", {}),
     "time_effector": ("Time Effector", "TIME", "Change the pieces more and more as the animation plays (amounts per second)",
                       {"b4d_eff_rotation": (0.0, 1.5707963, 0.0)}),
+    "shader_effector": ("Shader Effector", "TEXTURE", "Move, turn, size and tint the pieces by a pattern (noise, cells, waves, checker)",
+                        {"b4d_eff_position": (0.0, 100.0, 0.0), "b4d_eff_contrast": 100.0}),
+    "wave_effector": ("Wave Effector", "MOD_WAVE", "Move, turn and size the pieces back and forth in a wave over time and along the copies",
+                      {"b4d_eff_position": (0.0, 50.0, 0.0)}),
 }
-EFFECTOR_ORDER = ("random_effector", "plain_effector", "delay_effector", "step_effector", "target_effector", "time_effector")
+EFFECTOR_ORDER = ("random_effector", "plain_effector", "shader_effector", "delay_effector", "wave_effector",
+                  "step_effector", "target_effector", "time_effector")
 
 # field kind -> (label, icon, tooltip, starting values)
 FIELDS = {
@@ -71,8 +76,17 @@ FIELDS = {
     "spherical_field": ("Spherical Field", "FORCE_FORCE", "Let an effector act inside a ball, fading out at its edge", {}),
     "box_field": ("Box Field", "FORCE_FORCE", "Let an effector act inside a box, fading out at its sides", {}),
     "random_field": ("Random Field", "FORCE_TURBULENCE", "Let an effector act in a smooth random pattern that can move", {}),
+    "cylinder_field": ("Cylinder Field", "MESH_CYLINDER", "Let an effector act inside an upright cylinder, fading out at its sides and ends", {}),
+    "capsule_field": ("Capsule Field", "MESH_CAPSULE", "Let an effector act inside a capsule (a cylinder with round ends)", {}),
+    "cone_field": ("Cone Field", "MESH_CONE", "Let an effector act inside a cone that opens upward from this Field", {}),
+    "torus_field": ("Torus Field", "MESH_TORUS", "Let an effector act inside a ring around this Field", {}),
+    "radial_field": ("Radial Field", "FORCE_VORTEX", "Let an effector grow from nothing to full strength going round this Field", {}),
+    "shader_field": ("Shader Field", "TEXTURE", "Let an effector act by a pattern: noise, cells, waves or a checker",
+                     {"b4d_fld_contrast": 100.0}),
+    "wave_field": ("Wave Field", "MOD_WAVE", "Let an effector act in rings going out from this Field", {}),
 }
-FIELD_ORDER = ("linear_field", "spherical_field", "box_field", "random_field")
+FIELD_ORDER = ("linear_field", "spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field",
+               "torus_field", "radial_field", "random_field", "shader_field", "wave_field")
 
 # setting -> (default, how the field shows)
 SETTINGS = {
@@ -102,23 +116,51 @@ SETTINGS = {
     "b4d_fld_speed": (0.0, dict(soft_min=0.0, soft_max=10.0, precision=2, description="How fast the pattern changes as the animation plays")),
     "b4d_fld_contrast": (50.0, dict(min=0.0, soft_max=100.0, precision=1, subtype="PERCENTAGE",
                                     description="How sharp the edges between the patches are")),
+    "b4d_eff_random_mode": (0, None),
+    "b4d_eff_speed": (1.0, dict(soft_min=0.0, soft_max=10.0, precision=2, description="How fast it changes as the animation plays")),
+    "b4d_eff_pattern": (0, None),
+    "b4d_eff_noise_size": (200.0, dict(min=0.1, soft_max=10000.0, precision=1, step=100, description="Size of the pattern (cm)")),
+    "b4d_eff_contrast": (50.0, dict(min=0.0, soft_max=100.0, precision=1, subtype="PERCENTAGE",
+                                    description="How sharp the edges of the pattern are")),
+    "b4d_eff_wave_shape": (0, None),
+    "b4d_eff_frequency": (0.5, dict(soft_min=0.0, soft_max=10.0, precision=2, description="Waves per second")),
+    "b4d_eff_spread": (1.0, dict(soft_min=0.0, soft_max=10.0, precision=2,
+                                 description="How many waves fit along the copies, from the first to the last")),
+    "b4d_eff_upright": (False, dict(description="Keep the pieces' Y pointing up while they face the effector")),
+    "b4d_fld_height": (400.0, dict(min=0.0, soft_max=10000.0, precision=1, step=100, description="Height along the Field's Y (cm)")),
+    "b4d_fld_tube": (50.0, dict(min=0.0, soft_max=10000.0, precision=1, step=100, description="Thickness of the ring (cm)")),
+    "b4d_fld_sweep": (6.2831853, dict(subtype="ANGLE", min=0.0001, soft_max=6.2831853,
+                                      description="How far round the effect takes to reach full strength")),
+    "b4d_fld_wavelength": (200.0, dict(min=0.1, soft_max=10000.0, precision=1, step=100,
+                                       description="Distance from one ring to the next (cm)")),
+    "b4d_fld_pattern": (0, None),
     "b4d_vor_count": (20, dict(min=1, max=500, description="How many pieces")),
     "b4d_vor_seed": (0, dict(min=0, max=100000, description="Place the cuts differently")),
 }
 _MOVE = ("b4d_eff_strength", "b4d_eff_position", "b4d_eff_rotation", "b4d_eff_scale")
 _TINT = ("b4d_eff_use_color", "b4d_eff_color")
+_PATTERN = ("b4d_eff_pattern", "b4d_eff_noise_size", "b4d_eff_contrast", "b4d_eff_speed", "b4d_eff_seed")
+_F = ("b4d_fld_strength", "b4d_fld_invert")
 KIND_SETTINGS = {
-    "random_effector": _MOVE + _TINT + ("b4d_eff_seed",),
+    "random_effector": _MOVE + _TINT + ("b4d_eff_seed", "b4d_eff_random_mode", "b4d_eff_speed"),
+    "shader_effector": _MOVE + _TINT + _PATTERN,
+    "wave_effector": _MOVE + _TINT + ("b4d_eff_wave_shape", "b4d_eff_frequency", "b4d_eff_spread"),
     "plain_effector": _MOVE + _TINT,
     "delay_effector": ("b4d_eff_strength",),
     "step_effector": _MOVE + _TINT,
-    "target_effector": ("b4d_eff_strength",),
+    "target_effector": ("b4d_eff_strength", "b4d_eff_upright"),
     "time_effector": _MOVE,
     "linear_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_length", "b4d_fld_falloff"),
     "spherical_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_radius", "b4d_fld_falloff"),
     "box_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_size", "b4d_fld_falloff"),
-    "random_field": ("b4d_fld_strength", "b4d_fld_invert", "b4d_fld_noise_size", "b4d_fld_seed", "b4d_fld_speed",
-                     "b4d_fld_contrast", "b4d_fld_falloff"),
+    "random_field": _F + ("b4d_fld_noise_size", "b4d_fld_seed", "b4d_fld_speed", "b4d_fld_contrast", "b4d_fld_falloff"),
+    "cylinder_field": _F + ("b4d_fld_radius", "b4d_fld_height", "b4d_fld_falloff"),
+    "capsule_field": _F + ("b4d_fld_radius", "b4d_fld_height", "b4d_fld_falloff"),
+    "cone_field": _F + ("b4d_fld_radius", "b4d_fld_height", "b4d_fld_falloff"),
+    "torus_field": _F + ("b4d_fld_radius", "b4d_fld_tube", "b4d_fld_falloff"),
+    "radial_field": _F + ("b4d_fld_sweep", "b4d_fld_falloff"),
+    "shader_field": _F + ("b4d_fld_pattern", "b4d_fld_noise_size", "b4d_fld_seed", "b4d_fld_speed", "b4d_fld_contrast", "b4d_fld_falloff"),
+    "wave_field": _F + ("b4d_fld_wavelength", "b4d_fld_speed", "b4d_fld_falloff"),
     "voronoi_fracture": ("b4d_vor_count", "b4d_vor_seed"),
 }
 
@@ -165,19 +207,20 @@ def _listed(ob, prop, kind_fn):
     for link in getattr(ob, prop, ()):
         o = link.object
         k = kind_fn(o)
-        if k is not None and link.use and o.name in bpy.data.objects and all(o != x for x, _k in out):
-            out.append((o, k))
+        if k is not None and link.use and o.name in bpy.data.objects and all(o != x[0] for x in out):
+            out.append((o, k, getattr(link, "blend", "MAX")))
     return out
 
 
 def fields_of(effector):
-    """[(field, kind)] in list order: rows switched off, empty rows and objects that are not Fields are skipped."""
+    """[(field, kind, how it combines)] in list order: rows switched off, empty rows and objects that are not Fields
+    are skipped."""
     return _listed(effector, "b4d_fields", field_kind)
 
 
 def effectors_of(ob):
     """[(effector, kind)] in list order, the same way."""
-    return _listed(ob, "b4d_effectors", effector_kind)
+    return [(o, k) for o, k, _b in _listed(ob, "b4d_effectors", effector_kind)]
 
 
 def stamp(ob, kind, start=None):
@@ -190,7 +233,8 @@ def stamp(ob, kind, start=None):
         default, ui = SETTINGS[key]
         v = (start or {}).get(key, default)
         ob[key] = list(v) if isinstance(v, tuple) else v
-        ob.id_properties_ui(key).update(default=list(default) if isinstance(default, tuple) else default, **ui)
+        if ui:                                        # a menu setting is shown through its own Object property
+            ob.id_properties_ui(key).update(default=list(default) if isinstance(default, tuple) else default, **ui)
 
 
 # --- the modifier ------------------------------------------------------------------------------------------------
@@ -233,7 +277,7 @@ def _effector_list(ob):
 def _signature(ob):
     k = object_kind(ob)
     parts = [ob.name, k, ",".join(c.name for c in kids_of(ob)),
-             ";".join(f"{e.name}:{ek}:" + ",".join(f.name for f, _fk in fl) for e, ek, fl in _effector_list(ob))]
+             ";".join(f"{e.name}:{ek}:" + ",".join(f"{f.name}/{b}" for f, _fk, b in fl) for e, ek, fl in _effector_list(ob))]
     if k == "voronoi_fracture":
         parts.append(f"{ob.get('b4d_vor_count')}:{ob.get('b4d_vor_seed')}")
         for c in kids_of(ob):
@@ -385,10 +429,14 @@ def _release(ob):
 
 def _field_display(ob, kind):
     """The Null draws the Field's reach."""
-    want = {"spherical_field": ("SPHERE", ob.get("b4d_fld_radius", 200.0) * mn.SCALE),
+    r = ob.get("b4d_fld_radius", 200.0) * mn.SCALE
+    want = {"spherical_field": ("SPHERE", r), "capsule_field": ("SPHERE", r), "cylinder_field": ("CIRCLE", r),
+            "torus_field": ("CIRCLE", r), "cone_field": ("CONE", ob.get("b4d_fld_height", 400.0) * mn.SCALE),
             "box_field": ("CUBE", max(ob.get("b4d_fld_size", (400.0,) * 3)) * 0.5 * mn.SCALE),
             "linear_field": ("SINGLE_ARROW", ob.get("b4d_fld_length", 400.0) * mn.SCALE),
-            "random_field": ("SPHERE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE)}[kind]
+            "radial_field": ("CIRCLE", 1.0), "wave_field": ("CIRCLE", ob.get("b4d_fld_wavelength", 200.0) * mn.SCALE),
+            "random_field": ("SPHERE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE),
+            "shader_field": ("CUBE", ob.get("b4d_fld_noise_size", 200.0) * 0.5 * mn.SCALE)}[kind]
     if ob.empty_display_type != want[0]:
         ob.empty_display_type = want[0]
     if abs(ob.empty_display_size - want[1]) > 1e-6:
@@ -398,7 +446,7 @@ def _field_display(ob, kind):
 def _restart_trailing(ob):
     """A Delay Effector remembers past frames; when its settings change, that memory is dropped so the trailing is
     worked out again with the new values (Blender would otherwise keep showing the old frames)."""
-    key = ";".join(f"{e.name}:{e.get('b4d_eff_strength')}:{enabled(e)}:" + ",".join(f.name for f, _k in fl)
+    key = ";".join(f"{e.name}:{e.get('b4d_eff_strength')}:{enabled(e)}:" + ",".join(f.name for f, _k, _b in fl)
                    for e, k, fl in _effector_list(ob) if k == "delay_effector")
     if ob.get("b4d_delay_key", "") == key:
         return
@@ -560,6 +608,13 @@ class BLENDA4D_PG_field_link(bpy.types.PropertyGroup):
                                       description="A Field that limits where this effector acts")
     use: bpy.props.BoolProperty(name="Use", default=True, update=_list_changed,
                                 description="Let this Field limit the effector; untick to leave it out for a while")
+    blend: bpy.props.EnumProperty(name="Combine", default="MAX", update=_list_changed, items=(
+        ("MAX", "Max", "Where it reaches further than the Fields above, it wins"),
+        ("ADD", "Add", "Adds its reach to the Fields above"),
+        ("SUBTRACT", "Subtract", "Takes its reach away from the Fields above"),
+        ("MULTIPLY", "Multiply", "Keeps only what it and the Fields above share"),
+        ("MIN", "Min", "Where it reaches less than the Fields above, it wins")),
+        description="How this Field combines with the rows above it (the first row starts the reach)")
 
 
 class BLENDA4D_UL_links(bpy.types.UIList):
@@ -579,6 +634,11 @@ class BLENDA4D_UL_links(bpy.types.UIList):
         sub.label(text=ob.name, icon=(EFFECTORS.get(k) or FIELDS.get(k) or ("", "ERROR"))[1])
         if not enabled(ob):
             sub.label(text="", icon="X")                 # switched off everywhere (its Object Manager check mark)
+        if hasattr(item, "blend") and index > 0:         # the first row starts the reach; the others say how they join
+            r = row.row(align=True)
+            r.ui_units_x = 4.5
+            r.active = item.use
+            r.prop(item, "blend", text="")
 
 
 class BLENDA4D_OT_link_slot(bpy.types.Operator):
@@ -814,15 +874,39 @@ def _users(col, ob, prop, what):
               icon="LINKED" if users else "INFO")
 
 
+def _row(col, ob, key, text):
+    if key in ob:
+        col.prop(ob, f'["{key}"]', text=text)
+
+
+def _pattern_rows(col, ob, prefix):
+    col.prop(ob, prefix + "_pattern_ui", text="Pattern")
+    _row(col, ob, prefix + "_noise_size", "Pattern Size")
+    _row(col, ob, prefix + "_contrast", "Contrast")
+    _row(col, ob, prefix + "_speed", "Speed")
+    _row(col, ob, prefix + "_seed", "Seed")
+
+
 def page_effector(col, ob):
     kind = effector_kind(ob)
     keys = KIND_SETTINGS[kind]
     col.prop(ob, '["b4d_eff_strength"]', text="Strength")
     if kind == "target_effector":
+        _row(col, ob, "b4d_eff_upright", "Keep Upright")
         col.label(text="Pieces turn their Z axis toward this effector", icon="INFO")
     elif kind == "delay_effector":
         col.label(text="Pieces trail behind; play from the first frame", icon="INFO")
     else:
+        if kind == "random_effector":
+            col.prop(ob, "b4d_eff_random_mode_ui", text="Mode")
+            if ob.get("b4d_eff_random_mode") == 2:
+                _row(col, ob, "b4d_eff_speed", "Speed")
+        elif kind == "shader_effector":
+            _pattern_rows(col, ob, "b4d_eff")
+        elif kind == "wave_effector":
+            col.prop(ob, "b4d_eff_wave_shape_ui", text="Shape")
+            _row(col, ob, "b4d_eff_frequency", "Frequency")
+            _row(col, ob, "b4d_eff_spread", "Waves Along Copies")
         col.separator()
         per = " / s" if kind == "time_effector" else ""
         _vec(col, ob, "b4d_eff_position", "Position" + per)
@@ -834,8 +918,8 @@ def page_effector(col, ob):
             r = col.row()
             r.active = bool(ob.get("b4d_eff_use_color"))
             r.prop(ob, '["b4d_eff_color"]', text="Tint")
-        if "b4d_eff_seed" in keys:
-            col.prop(ob, '["b4d_eff_seed"]', text="Seed")
+        if kind == "random_effector":
+            _row(col, ob, "b4d_eff_seed", "Seed")
     _users(col, ob, "b4d_effectors", "Effectors")
 
 
@@ -844,20 +928,60 @@ def page_field(col, ob):
     col.prop(ob, '["b4d_fld_strength"]', text="Strength")
     col.prop(ob, '["b4d_fld_invert"]', text="Invert")
     col.separator()
-    if kind == "spherical_field":
-        col.prop(ob, '["b4d_fld_radius"]', text="Radius")
-    elif kind == "box_field":
+    if kind == "box_field":
         _vec(col, ob, "b4d_fld_size", "Size")
     elif kind == "linear_field":
-        col.prop(ob, '["b4d_fld_length"]', text="Length")
+        _row(col, ob, "b4d_fld_length", "Length")
+    elif kind == "radial_field":
+        _row(col, ob, "b4d_fld_sweep", "Sweep")
+    elif kind == "wave_field":
+        _row(col, ob, "b4d_fld_wavelength", "Wavelength")
+        _row(col, ob, "b4d_fld_speed", "Speed")
+    elif kind == "random_field":
+        _row(col, ob, "b4d_fld_noise_size", "Pattern Size")
+        _row(col, ob, "b4d_fld_contrast", "Contrast")
+        _row(col, ob, "b4d_fld_speed", "Speed")
+        _row(col, ob, "b4d_fld_seed", "Seed")
+    elif kind == "shader_field":
+        _pattern_rows(col, ob, "b4d_fld")
     else:
-        col.prop(ob, '["b4d_fld_noise_size"]', text="Pattern Size")
-        col.prop(ob, '["b4d_fld_contrast"]', text="Contrast")
-        col.prop(ob, '["b4d_fld_speed"]', text="Speed")
-        col.prop(ob, '["b4d_fld_seed"]', text="Seed")
-    if kind in ("spherical_field", "box_field"):
+        _row(col, ob, "b4d_fld_radius", "Radius")
+        _row(col, ob, "b4d_fld_height", "Height")
+        _row(col, ob, "b4d_fld_tube", "Thickness")
+    if kind in ("spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field", "torus_field"):
         col.prop(ob, '["b4d_fld_falloff"]', text="Soft Edge")
     _users(col, ob, "b4d_fields", "effector's Fields")
+
+
+# --- menu settings (stored as whole numbers in the custom properties, shown through Object properties) ------------
+def _menu(key, name, items):
+    items = tuple((ident, label, tip, i) for i, (ident, label, tip) in enumerate(items))
+
+    def get(self):
+        return int(self.get(key, 0))
+
+    def put(self, v):
+        self[key] = int(v)
+        self.update_tag()
+    return bpy.props.EnumProperty(name=name, items=items, get=get, set=put)
+
+
+_PATTERN_ITEMS = (("NOISE", "Noise", "Soft, cloudy patches"), ("CELLS", "Cells", "Round cells, each fading from its middle"),
+                  ("WAVES", "Waves", "Straight bands"), ("CHECKER", "Checker", "Squares, on and off"))
+
+
+def _menus():
+    return {
+        "b4d_eff_random_mode_ui": _menu("b4d_eff_random_mode", "Mode", (
+            ("UNIFORM", "Uniform", "Any amount in the range, all as likely"),
+            ("GAUSSIAN", "Gaussian", "Mostly small amounts, now and then a large one"),
+            ("NOISE", "Noise", "Smooth amounts that drift as the animation plays"))),
+        "b4d_eff_wave_shape_ui": _menu("b4d_eff_wave_shape", "Shape", (
+            ("SINE", "Sine", "A smooth wave"), ("TRIANGLE", "Triangle", "Straight up and down"),
+            ("SQUARE", "Square", "Jumps between the two ends"), ("SAW", "Saw", "Rises, then drops at once"))),
+        "b4d_eff_pattern_ui": _menu("b4d_eff_pattern", "Pattern", _PATTERN_ITEMS),
+        "b4d_fld_pattern_ui": _menu("b4d_fld_pattern", "Pattern", _PATTERN_ITEMS),
+    }
 
 
 PAGES = {"cloner": page_cloner, "matrix": page_matrix, "fracture": page_fracture, "voronoi_fracture": page_voronoi,
@@ -866,7 +990,8 @@ PAGES = {"cloner": page_cloner, "matrix": page_matrix, "fracture": page_fracture
 
 # --- registration ----------------------------------------------------------------------------------------------------
 classes = (BLENDA4D_PG_effector_link, BLENDA4D_PG_field_link, BLENDA4D_UL_links, BLENDA4D_OT_link_slot)
-PROPS = ("b4d_effectors", "b4d_effector_index", "b4d_fields", "b4d_field_index")
+PROPS = ("b4d_effectors", "b4d_effector_index", "b4d_fields", "b4d_field_index", "b4d_eff_random_mode_ui",
+         "b4d_eff_wave_shape_ui", "b4d_eff_pattern_ui", "b4d_fld_pattern_ui")
 GROUP_OF = {**{k: "moclone" for k in OBJECTS}, **{k: "effectors" for k in EFFECTORS}, **{k: "fields" for k in FIELDS}}
 _saved = {}
 
@@ -906,6 +1031,8 @@ def register():
     O.b4d_effector_index = bpy.props.IntProperty(name="Effector", min=0)
     O.b4d_fields = bpy.props.CollectionProperty(type=BLENDA4D_PG_field_link)
     O.b4d_field_index = bpy.props.IntProperty(name="Field", min=0)
+    for name, prop in _menus().items():
+        setattr(O, name, prop)
     for k in OBJECT_ORDER:
         label, icon, tip = OBJECTS[k]
         tabs, pages = [("OBJECT", "Object")], {"OBJECT": PAGES[k]}

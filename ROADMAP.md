@@ -15,11 +15,14 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 
 ## MoClone (`moclone.py`)
 In: the Cloner (Linear, Grid with box, ball and cylinder forms, Radial, Honeycomb, Object), Matrix, Fracture, Voronoi
-Fracture and Tracer; the Random, Plain, Delay, Step, Target and Time effectors; the Linear, Spherical, Box and Random
-Fields. Effector and Field lists take drops from the Object Manager and have a check box per row. Still to do:
-- Shader and Formula effectors; Target with an up direction; Random modes (noise, Gaussian); colour from a gradient;
-  effectors acting on the child's own animation time; Delay modes (spring, ease).
-- More Fields (cylinder, cone, shader, sound) and ways to combine them (add, subtract, multiply, not only the stronger).
+Fracture and Tracer; the Random (Uniform, Gaussian, Noise), Plain, Shader, Delay, Wave, Step, Target (with Keep
+Upright) and Time effectors; the Linear, Spherical, Box, Cylinder, Capsule, Cone, Torus, Radial, Random, Shader and
+Wave Fields, combined per row (Max, Add, Subtract, Multiply, Min). Effector and Field lists take drops from the Object
+Manager and have a check box per row. Still to do:
+- Effectors: a Formula effector (typed expressions), colour from a gradient, effectors acting on the child's own
+  animation time, Delay modes (spring, ease), the Shader Effector reading a material or image.
+- Fields: sound, a Field from an image or a material, Fields that remember (freeze, decay), Field layers per effector
+  with their own strength.
 - A Null with objects under it copied as one clone (only objects with geometry are copied today).
 - More Cloner modes and options: spirals, copies inside a volume, Object mode reading the object's own selections,
   more Clone Order options (blend between children, sorted by index).

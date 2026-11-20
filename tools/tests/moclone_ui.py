@@ -151,9 +151,19 @@ def scene():
     vor["b4d_vor_seed"] = 3
     vor_rnd = add("random_effector", [vor])
     vor_rnd["b4d_eff_position"] = [30.0, 30.0, 30.0]
-    add("linear_field", [])
-    add("box_field", [])
-    add("random_field", [])
+    for k in ("linear_field", "box_field", "random_field", "cylinder_field", "capsule_field", "cone_field",
+              "torus_field", "radial_field", "shader_field", "wave_field"):
+        add(k, [])
+    # the Plain Effector's Fields: the ball, minus a box (a row with its own way of combining)
+    cut = add("box_field", [plain])
+    cut.name = "Cut Box"
+    cut.location = (-3.0, 0.0, 0.0)
+    plain.b4d_fields[1].blend = "SUBTRACT"
+    # a wave through the honeycomb, a pattern on the ring
+    wave = add("wave_effector", [comb])
+    wave["b4d_eff_position"] = [0.0, 40.0, 0.0]
+    shade = add("shader_effector", [ring])
+    shade["b4d_eff_pattern"] = 1
     tr = add("tracer", [tgt])
     tr.name = "Tracer"
     blenda4d.moclone.sync_all()
@@ -280,8 +290,11 @@ for name, tab, setting in (
         ("Voronoi Fracture", "OBJECT", None), ("Voronoi Fracture", "EFFECTORS", None), ("Tracer", "OBJECT", None),
         ("Random Effector", "OBJECT", None), ("Plain Effector", "OBJECT", None), ("Plain Effector", "FIELDS", None),
         ("Delay Effector", "OBJECT", None), ("Step Effector", "OBJECT", None), ("Target Effector", "OBJECT", None),
-        ("Time Effector", "OBJECT", None), ("Linear Field", "OBJECT", None), ("Spherical Field", "OBJECT", None),
-        ("Box Field", "OBJECT", None), ("Random Field", "OBJECT", None)):
+        ("Time Effector", "OBJECT", None), ("Shader Effector", "OBJECT", None), ("Wave Effector", "OBJECT", None),
+        ("Linear Field", "OBJECT", None), ("Spherical Field", "OBJECT", None),
+        ("Box Field", "OBJECT", None), ("Random Field", "OBJECT", None), ("Cylinder Field", "OBJECT", None),
+        ("Capsule Field", "OBJECT", None), ("Cone Field", "OBJECT", None), ("Torus Field", "OBJECT", None),
+        ("Radial Field", "OBJECT", None), ("Shader Field", "OBJECT", None), ("Wave Field", "OBJECT", None)):
     if setting:
         PLAN += [lambda n=name, s=setting: put(n, *s)]
     tag = f"_{setting[0]}_{setting[1]}".replace(" ", "") if setting else ""
@@ -291,7 +304,8 @@ PLAN += drag_steps("Time Effector", "Cloner") + W * 2 + [lambda: shot("drop_time
 PLAN += [lambda: untick("Cloner", 0)] + W * 2 + [lambda: shot("cloner_effectors_row_unticked")]
 # the Object Manager's selection lined up with its rows at three interface sizes; a click picks the row under it
 for s in (1.0, 1.25, 1.5):
-    PLAN += [lambda s=s: ui_scale(s)] + W * 3 + [lambda: scroll_to("Tracer")] + W * 2
+    # bring the row into sight, then select another object (without scrolling) so the click has to do the work
+    PLAN += [lambda s=s: ui_scale(s)] + W * 3 + [lambda: scroll_to("Random Field"), lambda: only([bpy.data.objects["Floor"]])] + W * 2
     PLAN += [lambda: click_row("Random Field")] + W + [lambda: check_click("Random Field")] + W * 2
     PLAN += [lambda s=s: shot(f"om_select_scale_{s}")]
 PLAN += [lambda: ui_scale(1.0)] + W * 2
