@@ -51,20 +51,20 @@ USES_CHILDREN = ("cloner", "fracture", "voronoi_fracture")
 
 # effector kind -> (label, icon, tooltip, starting values)
 EFFECTORS = {
-    "random_effector": ("Random Effector", "FORCE_TURBULENCE", "Move, turn, size and tint each piece by a different random amount",
+    "random_effector": ("Random Effector", "MOD_NOISE", "Move, turn, size and tint each piece by a different random amount",
                         {"b4d_eff_position": (50.0, 50.0, 50.0)}),
-    "plain_effector": ("Plain Effector", "EMPTY_AXIS", "Move, turn, size and tint every piece by the same amount (use a Field to limit it)",
+    "plain_effector": ("Plain Effector", "OBJECT_ORIGIN", "Move, turn, size and tint every piece by the same amount (use a Field to limit it)",
                        {"b4d_eff_position": (0.0, 100.0, 0.0)}),
-    "delay_effector": ("Delay Effector", "TIME", "Make the pieces trail behind their moves, catching up over the next frames",
+    "delay_effector": ("Delay Effector", "IPO_EASE_IN_OUT", "Make the pieces trail behind their moves, catching up over the next frames",
                        {"b4d_eff_strength": 80.0}),
     "step_effector": ("Step Effector", "IPO_CONSTANT", "Change the pieces more and more from the first to the last",
                       {"b4d_eff_scale": (100.0, 100.0, 100.0)}),
-    "target_effector": ("Target Effector", "TRACKER", "Turn the pieces so they face this effector", {}),
-    "time_effector": ("Time Effector", "TIME", "Change the pieces more and more as the animation plays (amounts per second)",
+    "target_effector": ("Target Effector", "CON_TRACKTO", "Turn the pieces so they face this effector", {}),
+    "time_effector": ("Time Effector", "PREVIEW_RANGE", "Change the pieces more and more as the animation plays (amounts per second)",
                       {"b4d_eff_rotation": (0.0, 1.5707963, 0.0)}),
-    "shader_effector": ("Shader Effector", "TEXTURE", "Move, turn, size and tint the pieces by a pattern (noise, cells, waves, checker)",
+    "shader_effector": ("Shader Effector", "NODE_MATERIAL", "Move, turn, size and tint the pieces by a pattern (noise, cells, waves, checker)",
                         {"b4d_eff_position": (0.0, 100.0, 0.0), "b4d_eff_contrast": 100.0}),
-    "wave_effector": ("Wave Effector", "MOD_WAVE", "Move, turn and size the pieces back and forth in a wave over time and along the copies",
+    "wave_effector": ("Wave Effector", "FORCE_HARMONIC", "Move, turn and size the pieces back and forth in a wave over time and along the copies",
                       {"b4d_eff_position": (0.0, 50.0, 0.0)}),
 }
 EFFECTOR_ORDER = ("random_effector", "plain_effector", "shader_effector", "delay_effector", "wave_effector",
@@ -72,20 +72,20 @@ EFFECTOR_ORDER = ("random_effector", "plain_effector", "shader_effector", "delay
 
 # field kind -> (label, icon, tooltip, starting values)
 FIELDS = {
-    "linear_field": ("Linear Field", "FORCE_FORCE", "Let an effector grow from nothing at this Field to full strength one Length along its Z", {}),
-    "spherical_field": ("Spherical Field", "FORCE_FORCE", "Let an effector act inside a ball, fading out at its edge", {}),
-    "box_field": ("Box Field", "FORCE_FORCE", "Let an effector act inside a box, fading out at its sides", {}),
-    "random_field": ("Random Field", "FORCE_TURBULENCE", "Let an effector act in a smooth random pattern that can move", {}),
+    "linear_field": ("Linear Field", "IPO_LINEAR", "Let an effector grow from nothing at this Field to full strength one Length along its Z", {}),
+    "spherical_field": ("Spherical Field", "MESH_UVSPHERE", "Let an effector act inside a ball, fading out at its edge", {}),
+    "box_field": ("Box Field", "MESH_CUBE", "Let an effector act inside a box, fading out at its sides", {}),
+    "random_field": ("Random Field", "RNDCURVE", "Let an effector act in a smooth random pattern that can move", {}),
     "cylinder_field": ("Cylinder Field", "MESH_CYLINDER", "Let an effector act inside an upright cylinder, fading out at its sides and ends", {}),
     "capsule_field": ("Capsule Field", "MESH_CAPSULE", "Let an effector act inside a capsule (a cylinder with round ends)", {}),
     "cone_field": ("Cone Field", "MESH_CONE", "Let an effector act inside a cone that opens upward from this Field", {}),
     "torus_field": ("Torus Field", "MESH_TORUS", "Let an effector act inside a ring around this Field", {}),
     "radial_field": ("Radial Field", "FORCE_VORTEX", "Let an effector grow from nothing to full strength going round this Field", {}),
-    "shader_field": ("Shader Field", "TEXTURE", "Let an effector act by a pattern: noise, cells, waves or a checker",
+    "shader_field": ("Shader Field", "NODE_MATERIAL", "Let an effector act by a pattern: noise, cells, waves or a checker",
                      {"b4d_fld_contrast": 100.0}),
     "wave_field": ("Wave Field", "MOD_WAVE", "Let an effector act in rings going out from this Field", {}),
     "image_field": ("Image Field", "IMAGE_DATA", "Let an effector act by the brightness of an image laid flat under this Field", {}),
-    "sound_field": ("Sound Field", "SOUND", "Let an effector act as strongly as a sound is loud at each frame", {}),
+    "sound_field": ("Sound Field", "OUTLINER_DATA_SPEAKER", "Let an effector act as strongly as a sound is loud at each frame", {}),
 }
 FIELD_ORDER = ("linear_field", "spherical_field", "box_field", "cylinder_field", "capsule_field", "cone_field",
                "torus_field", "radial_field", "random_field", "shader_field", "wave_field", "image_field", "sound_field")

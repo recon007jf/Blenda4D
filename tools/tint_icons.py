@@ -30,6 +30,7 @@ OUT = os.path.join(ROOT, "blenda4d", "icons")
 CACHE = os.path.join(tempfile.gettempdir(), "blenda4d_icon_cache")
 BRANCH = "blender-v5.2-release"
 SVG_URL = "https://projects.blender.org/blender/blender/raw/branch/{branch}/release/datafiles/icons_svg/{name}.svg"
+MIRROR_URL = "https://raw.githubusercontent.com/blender/blender/{branch}/release/datafiles/icons_svg/{name}.svg"   # same files
 BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
 RSVG = shutil.which("rsvg-convert") or "/opt/homebrew/bin/rsvg-convert"
 
@@ -38,7 +39,8 @@ COLOURS = {
     "shapes": "#6fd3d9", "splines": "#6fd3d9", "text": "#6fd3d9",           # things you build from: cyan
     "generators": "#8fd36a", "volume": "#8fd36a",                         # objects that make geometry: green
     "deformers": "#a690e6", "effectors": "#a690e6",                       # objects that change others: violet
-    "moclone": "#ee9cc8", "fields": "#ee9cc8",                            # cloning and fields: pink
+    "moclone": "#ee9cc8",                                                 # cloning: pink
+    "fields": "#e8d25a",                                                  # fields: yellow
     "null": "#c8cfe8", "environment": "#c8cfe8", "camera": "#c8cfe8", "lights": "#c8cfe8",   # scene: pale lavender
     "spline_tools": "#f5b355",                                            # tool column accents: orange
     "mesh_tools": "#b3b3b3",                                              # tool column accents: grey
@@ -107,10 +109,15 @@ def svg_source(name):
             with urllib.request.urlopen(url, timeout=30) as r:
                 data = r.read()
         except Exception:
-            try:
-                with urllib.request.urlopen(url.replace("branch/" + BRANCH, "branch/main"), timeout=30) as r:
-                    data = r.read()
-            except Exception:
+            data = None
+            for u in (url.replace("branch/" + BRANCH, "branch/main"), MIRROR_URL.format(branch=BRANCH, name=name)):
+                try:
+                    with urllib.request.urlopen(u, timeout=30) as r:
+                        data = r.read()
+                    break
+                except Exception:
+                    pass
+            if data is None:
                 return None
         if not data.lstrip().startswith(b"<svg"):
             return None
