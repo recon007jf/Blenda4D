@@ -51,7 +51,7 @@ USES_CHILDREN = ("cloner", "fracture", "voronoi_fracture")
 
 # effector kind -> (label, icon, tooltip, starting values)
 EFFECTORS = {
-    "random_effector": ("Random Effector", "MOD_NOISE", "Move, turn, size and tint each piece by a different random amount",
+    "random_effector": ("Random Effector", "STICKY_UVS_DISABLE", "Move, turn, size and tint each piece by a different random amount",
                         {"b4d_eff_position": (50.0, 50.0, 50.0)}),
     "plain_effector": ("Plain Effector", "OBJECT_ORIGIN", "Move, turn, size and tint every piece by the same amount (use a Field to limit it)",
                        {"b4d_eff_position": (0.0, 100.0, 0.0)}),
@@ -75,7 +75,7 @@ FIELDS = {
     "linear_field": ("Linear Field", "IPO_LINEAR", "Let an effector grow from nothing at this Field to full strength one Length along its Z", {}),
     "spherical_field": ("Spherical Field", "MESH_UVSPHERE", "Let an effector act inside a ball, fading out at its edge", {}),
     "box_field": ("Box Field", "MESH_CUBE", "Let an effector act inside a box, fading out at its sides", {}),
-    "random_field": ("Random Field", "RNDCURVE", "Let an effector act in a smooth random pattern that can move", {}),
+    "random_field": ("Random Field", "STICKY_UVS_DISABLE", "Let an effector act in a smooth random pattern that can move", {}),
     "cylinder_field": ("Cylinder Field", "MESH_CYLINDER", "Let an effector act inside an upright cylinder, fading out at its sides and ends", {}),
     "capsule_field": ("Capsule Field", "MESH_CAPSULE", "Let an effector act inside a capsule (a cylinder with round ends)", {}),
     "cone_field": ("Cone Field", "MESH_CONE", "Let an effector act inside a cone that opens upward from this Field", {}),

@@ -101,6 +101,8 @@ def ask_blender(blender):
 
 
 def svg_source(name):
+    if name in REDRAWN:
+        return REDRAWN[name]
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, name + ".svg")
     if not os.path.exists(path):
@@ -127,7 +129,22 @@ def svg_source(name):
         return f.read()
 
 
-_WHITE = re.compile(r'(fill\s*[:=]\s*"?)(#fff(?:fff)?|white)\b', re.I)
+_WHITE = re.compile(r'((?:fill|stroke)\s*[:=]\s*"?)(#fff(?:fff)?|white)\b', re.I)
+
+
+# Icons redrawn for Blenda 4D from one of Blender's (same strokes, other proportions). Keyed by the Blender icon they
+# stand in for, so the plain Blender icon is still the fallback when no tinted copy is found.
+def _squares(sizes):
+    """Blender's STICKY_UVS_DISABLE (three scattered outline squares, 1-unit line, 0.5 corners on a 14 x 15 grid)
+    with each square its own size; `sizes` is [(x, y, side), ...] of the outer edges."""
+    rects = "".join(f'<rect x="{x + 0.5}" y="{y + 0.5}" width="{w - 1}" height="{w - 1}" rx="0.5" fill="none" '
+                    f'stroke="#fff" stroke-width="1" stroke-linejoin="round"/>' for x, y, w in sizes)
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 15" width="1400" height="1500">{rects}</svg>'
+
+
+REDRAWN = {
+    "sticky_uvs_disable": _squares([(3.4, 0.4, 4.6), (9.6, 6.8, 3.4), (0.3, 9.2, 5.4)]),   # Random: three sizes
+}
 
 
 def tint_svg(svg, colour):
