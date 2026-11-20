@@ -124,7 +124,7 @@ def test_rows():
     changes(c, "Step Rotation", (0.0, 30.0, 0.0), "Linear: Step Rotation")
     changes(c, "Step Size", 50.0, "Linear: Step Size")
     M.put(c, "Mode", "Grid")
-    check(len(result(c)[0]) == 9 * 8, "Grid: 3 x 1 x 3 copies")
+    check(len(result(c)[0]) == 15 * 8, "Grid: 5 x 1 x 3 copies")
     for name in ("Count X", "Count Y", "Count Z"):
         changes(c, name, 4, f"Grid: {name}")
     changes(c, "Spacing", (60.0, 60.0, 250.0), "Grid: Spacing")
@@ -217,6 +217,14 @@ def test_effector(kind):
         bpy.context.scene.frame_set(25)
     on = result(c)
     check(on != base, "changes the copies")
+    if kind == "step_effector":                           # from unchanged at the first copy to the full amount at the last
+        for k, v in (("b4d_eff_position", (0.0, 0.0, 0.0)), ("b4d_eff_scale", (0.0, 100.0, 0.0))):
+            setv(e, k, v)
+        update()
+        ev = c.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        check(abs(ev.dimensions.z - 0.4) < 1e-3, f"Step: the last copy gets the full amount and no more (twice as tall) ({ev.dimensions.z:.3f} m)")
+        setv(e, "b4d_eff_scale", (100.0, 100.0, 100.0))
+        on = result(c)
     if kind == "target_effector":
         e.location.x += 4.0
         check(result(c) != on, "moving the effector turns the copies again")

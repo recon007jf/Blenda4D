@@ -298,9 +298,11 @@ class BLENDA4D_UL_effectors(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
         ob = item.object
-        row.prop(item, "object", text="", emboss=False,
-                 icon=EFFECTORS[effector_kind(ob)][1] if effector_kind(ob) else "QUESTION")
-        if ob is not None and hasattr(ob, "b4d_enabled"):
+        if ob is None:                                   # an empty row: pick the effector in it
+            row.prop(item, "object", text="", icon="QUESTION")
+            return
+        row.label(text=ob.name, icon=EFFECTORS[effector_kind(ob)][1] if effector_kind(ob) else "ERROR")
+        if hasattr(ob, "b4d_enabled"):
             row.prop(ob, "b4d_enabled", text="", emboss=False, icon="CHECKMARK" if ob.b4d_enabled else "X")
 
 
@@ -371,7 +373,11 @@ def page_cloner(col, ob):
     def is_(*modes):
         return lambda v: v("Mode") in modes
     _rows(col, ob, [
-        ("Mode", "Mode"), None,
+        ("Mode", "Mode"),
+        ("Clone Order", "Clones"),
+        ("Seed", "Seed", lambda v: v("Clone Order") == "Random" or
+         (v("Mode") == "Object" and v("Distribution") == "Surface")),
+        None,
         ("Object", "Object", is_("Object")),
         ("Distribution", "Distribution", is_("Object")),
         ("Count", "Count", lambda v: v("Mode") in ("Linear", "Radial") or
@@ -385,9 +391,6 @@ def page_cloner(col, ob):
         ("Start Angle", "Start Angle", is_("Radial")), ("End Angle", "End Angle", is_("Radial")),
         ("Align", "Align", is_("Radial", "Object")),
         None,
-        ("Clone Order", "Clone Order"),
-        ("Seed", "Seed", lambda v: v("Clone Order") == "Random" or
-         (v("Mode") == "Object" and v("Distribution") == "Surface")),
         ("Keep Instances", "Keep as Instances"),
     ])
     if mode == "Object":
@@ -483,10 +486,10 @@ def register():
         bpy.utils.register_class(c)
     bpy.types.Object.b4d_effectors = bpy.props.CollectionProperty(type=BLENDA4D_PG_effector_link)
     bpy.types.Object.b4d_effector_index = bpy.props.IntProperty(name="Effector", min=0)
-    kinds.add(CLONER, "Cloner", "MOD_ARRAY", create=create_cloner,
+    kinds.add(CLONER, "Cloner Object", "MOD_ARRAY", create=create_cloner,
               tabs=[("OBJECT", "Object"), ("EFFECTORS", "Effectors")],
               pages={"OBJECT": page_cloner, "EFFECTORS": page_effectors},
-              titles={"OBJECT": "Cloner", "EFFECTORS": "Effectors"},
+              titles={"OBJECT": "Object Properties", "EFFECTORS": "Effectors"},
               describe="Lay out copies of the objects under it (selected objects go under it)")
     kinds.create_button("moclone", "Cloner", CLONER)
     kinds.menu_item("MoClone", "Cloner", CLONER)

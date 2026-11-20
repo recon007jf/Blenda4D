@@ -31,8 +31,8 @@ INPUTS = [
     ("Offset", "VECTOR", (100.0, 0.0, 0.0)),
     ("Step Rotation", "VECTOR", (0.0, 0.0, 0.0)),
     ("Step Size", "FLOAT", 0.0),
-    ("Count X", "INT", 3), ("Count Y", "INT", 1), ("Count Z", "INT", 3),
-    ("Spacing", "VECTOR", (100.0, 100.0, 100.0)),
+    ("Count X", "INT", 5), ("Count Y", "INT", 1), ("Count Z", "INT", 3),
+    ("Spacing", "VECTOR", (150.0, 100.0, 150.0)),
     ("Radius", "FLOAT", 200.0),
     ("Start Angle", "FLOAT", 0.0),
     ("End Angle", "FLOAT", 360.0),
@@ -306,14 +306,16 @@ def _shown_vec(g, ob, key, scale):
     return g.xyz(x, z, y)
 
 
-def _weights(g, ob, kind):
+def _weights(g, geo, ob, kind):
     """(position, rotation, size, colour) weights per copy: vectors for the first three, a number for colour."""
     if kind == "random_effector":
         seed = _driven(g, ob, "b4d_eff_seed")
         r = [g.random("FLOAT_VECTOR", (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0), g.m("ADD", seed, k * 7919)) for k in range(3)]
         return r[0], r[1], r[2], g.random("FLOAT", 0.0, 1.0, g.m("ADD", seed, 3 * 7919))
     if kind == "step_effector":
-        count = g.node("GeometryNodeAttributeDomainSize", component="INSTANCES").outputs["Instance Count"]
+        size = g.node("GeometryNodeAttributeDomainSize", component="INSTANCES")
+        g.l.new(geo, size.inputs["Geometry"])
+        count = size.outputs["Instance Count"]
         f = g.m("DIVIDE", g.index(), g.m("MAXIMUM", g.m("SUBTRACT", count, 1.0), 1.0))
         return f, f, f, f
     # time: the values are per second
@@ -356,7 +358,7 @@ def effector_stage(g, geo, ob, kind):
         g.l.new(geo, st.inputs["Instances"])
         g.l.new(comb.outputs[0], st.inputs["Transform"])
         return st.outputs[0]
-    wp, wr, ws, wc = _weights(g, ob, kind)
+    wp, wr, ws, wc = _weights(g, geo, ob, kind)
     pos = _scaled(g, _vec_mul(g, _shown_vec(g, ob, "b4d_eff_position", SCALE), wp), s)
     rot = _scaled(g, _vec_mul(g, _shown_vec(g, ob, "b4d_eff_rotation", 1.0), wr), s)
     size = _scaled(g, _vec_mul(g, _shown_vec(g, ob, "b4d_eff_scale", 0.01), ws), s)
