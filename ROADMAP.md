@@ -61,6 +61,7 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 - Editing several selected tags at once; dragging tags between objects.
 
 ## Managers and pages
+- Done: drag a material from the Material Manager onto an object's row in the Object Manager or onto an object in the 3D view to give that object the material (`matdrag.py`; the Object Manager row highlights while you drag over it).
 - **Variations**: several versions of one scene (cameras, materials, visibility) from the Variations tab.
 - **Tags**: more tag types and their pages.
 - **Material editing**: a simple page for editing any material, with a shader switch.
