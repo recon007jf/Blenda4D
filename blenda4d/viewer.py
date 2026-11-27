@@ -37,6 +37,7 @@ class Seq:
     def __init__(self, name, folder, fps):
         self.name, self.folder, self.fps, self.frames, self.open = name, folder, fps, [], True
         self.settings, self.kept = None, True              # kept: its files are the user's own, never deleted here
+        self.rendered = False                              # made by a render here, not opened from a file (delete_files)
 
     @property
     def still(self):
@@ -604,7 +605,7 @@ def begin(scene, first, last, keep, seq=None):
         folder = os.path.join(cache(), f"{len(S.seqs):04d}_{int(time.time())}")
         os.makedirs(folder, exist_ok=True)
         seq = Seq(name, folder, int(round(scene.render.fps / max(scene.render.fps_base, 1e-6))))
-        seq.kept = keep
+        seq.kept, seq.rendered = keep, True
         try:
             from . import render_settings
             seq.settings = render_settings.capture(scene)
@@ -786,6 +787,46 @@ def add_file(path):
     S.lo, S.hi = seq.frames[0].number, seq.frames[-1].number
     show(seq, 0)
     bpy.app.timers.register(_thumbs, first_interval=0.1)
+
+
+def remove_frame(seq, index):
+    """Take one frame out of History. A file kept for the session only goes with it; a file you saved stays."""
+    if len(seq.frames) < 2 or seq.frames[0].path.lower().endswith(MOVIES):
+        return remove([seq])
+    f = seq.frames.pop(index)
+    _drop([f.path])
+    if not seq.kept and _cache_root[0] and f.path.startswith(_cache_root[0]):
+        try:
+            os.remove(f.path)
+        except OSError:
+            pass
+    S.a, S.b, S.ab = None, None, False                     # A and B name frames by their place
+    S.ab_px.clear()
+    S.lo, S.hi = seq.frames[0].number, seq.frames[-1].number
+    show(seq, min(index, len(seq.frames) - 1))
+
+
+def delete_files(seq):
+    """Delete a render's files from disk and take it out of History: only a render made here, never pictures that
+    were opened from a file. Rows of other renders that showed the same files go too (renders written to the same
+    folder share them). Gives the number of files deleted."""
+    if not seq.rendered:
+        return 0
+    paths = {f.path for f in seq.frames}
+    _drop(paths)
+    gone = 0
+    for path in paths:
+        try:
+            os.remove(path)
+            gone += 1
+        except OSError:
+            pass
+    for q in S.seqs:
+        q.frames[:] = [f for f in q.frames if f.path not in paths]
+    S.a, S.b, S.ab = None, None, False
+    S.ab_px.clear()
+    remove([q for q in S.seqs if not q.frames])
+    return gone
 
 
 def remove(seqs):
