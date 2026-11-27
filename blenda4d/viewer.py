@@ -788,6 +788,23 @@ def add_file(path):
     bpy.app.timers.register(_thumbs, first_interval=0.1)
 
 
+def remove_frame(seq, index):
+    """Take one frame out of History. A file kept for the session only goes with it; a file you saved stays."""
+    if len(seq.frames) < 2 or seq.frames[0].path.lower().endswith(MOVIES):
+        return remove([seq])
+    f = seq.frames.pop(index)
+    _drop([f.path])
+    if not seq.kept and _cache_root[0] and f.path.startswith(_cache_root[0]):
+        try:
+            os.remove(f.path)
+        except OSError:
+            pass
+    S.a, S.b, S.ab = None, None, False                     # A and B name frames by their place
+    S.ab_px.clear()
+    S.lo, S.hi = seq.frames[0].number, seq.frames[-1].number
+    show(seq, min(index, len(seq.frames) - 1))
+
+
 def remove(seqs):
     """Take renders out of History. Files kept for the session go with them; files you saved stay."""
     for q in list(seqs):

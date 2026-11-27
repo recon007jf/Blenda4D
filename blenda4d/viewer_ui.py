@@ -535,6 +535,7 @@ C = {
     "RENDER_ANIM": ("Render Animation", "RENDER_ANIMATION", lambda: bpy.ops.blenda4d.render("INVOKE_DEFAULT", animation=True), lambda: not S.rendering, None, "Render the animation"),
     "RESUME": ("Resume Rendering", "PLAY", V.resume, lambda: S.resume is not None and not S.rendering, None, "Go on with the animation that was stopped: only the frames that were never made"),
     "REVEAL": ({"darwin": "Show File in Finder", "win32": "Show File in Explorer"}.get(sys.platform, "Show File in Folder"), "FILEBROWSER", _reveal, _shown, None, "Show the picture's file where it is on disk"),
+    "REMOVE_FRAME": ("Remove Frame", "REMOVE", lambda: V.remove_frame(S.seq, S.index), lambda: _many() and not S.rendering, None, "Take only the frame shown out of History. A file you saved stays on disk"),
     "REMOVE": ("Remove Image", "REMOVE", lambda: V.remove([S.seq]), lambda: S.seq is not None and not S.rendering, None, "Take this render out of History. Files you saved stay on disk"),
     "REMOVE_ALL": ("Remove All Images", "TRASH", lambda: V.remove(S.seqs), lambda: bool(S.seqs) and not S.rendering, None, "Empty History. Files you saved stay on disk"),
     "CLEAR": ("Clear Cache", "FILE_REFRESH", _clear_cache, lambda: bool(S.seqs), None, "Let go of the frames kept in memory; they are read again when shown"),
@@ -582,7 +583,7 @@ for _m in ("RGB", "Red", "Green", "Blue", "Luminance"):
 
 MENUS = {
     "File": ["OPEN", "SAVE", "REVEAL", None, "RENDER", "RENDER_ANIM", "RESUME", None, "SETTING", None, "POP", "DOCK"],
-    "Edit": ["REMOVE", "REMOVE_ALL", None, "CLEAR"],
+    "Edit": ["REMOVE_FRAME", "REMOVE", "REMOVE_ALL", None, "CLEAR"],
     "View": ["#zoom", "FIT", "ZOOM_IN", "ZOOM_OUT", None, "ALPHA", "FILTER", "FILTER_RESET", None, "EMBEDDED", "SCENE", None, "FOLD", "UNFOLD"],
     "Compare": ["AB", "SET_A", "SET_B", "SWAP", None, "DIFF", "DIRECTION", None, "SHOW_LINE", "SHOW_TEXT"],
     "Animation": ["#rates", None, "PLAY", "BACK", None, "PREV", "NEXT", "START", "END", None, "SET_START", "SET_END", None, "SIMPLE", "CYCLE", "PINGPONG", None, "LINK"],
@@ -590,7 +591,7 @@ MENUS = {
     "rates": ["FPS_SEQ", None] + [f"FPS_{r}" for r in V.RATES],
     "histogram": [f"HIST_{m}" for m in ("RGB", "Red", "Green", "Blue", "Luminance")],
     "transform": ["EMBEDDED", "SCENE"],
-    "context": ["REVEAL", "SAVE", None, "SET_A", "SET_B", None, "SETTING", None, "REMOVE", "REMOVE_ALL"],
+    "context": ["REVEAL", "SAVE", None, "SET_A", "SET_B", None, "SETTING", None, "REMOVE_FRAME", "REMOVE", "REMOVE_ALL"],
 }
 TITLES = {"zoom": "Zoom Values", "rates": "Frame Rate", "histogram": "Histogram", "transform": "View Transform", "context": "History"}
 TIPS = {"File": "Open, save and render", "Edit": "Remove renders and free memory", "View": "How the picture is shown", "Compare": "Compare two pictures",
@@ -831,8 +832,11 @@ class BLENDA4D_OT_viewer_press(bpy.types.Operator):
         for box, action, drag in reversed(S.hits.get(name, [])):
             if box[0] <= x <= box[2] and box[1] <= y <= box[3]:
                 if event.type == "RIGHTMOUSE":
-                    if action[0] == "row":
-                        _do(action)
+                    if action[0] == "fold" and action[1] is not S.seq:
+                        action = ("row", action[1], 0)     # a render's own row: the menu is about that render
+                    if action[0] in ("row", "fold"):
+                        if action[0] == "row":
+                            _do(action)
                         V.redraw()
                         bpy.ops.wm.call_menu(name="BLENDA4D_MT_viewer_context")
                     return {"FINISHED"}
