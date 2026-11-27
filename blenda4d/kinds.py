@@ -14,7 +14,7 @@ A module (lights.py, deformers.py, ...) calls these from its register():
 Modules listed in FEATURES are imported and registered by the switch when Blenda mode goes on."""
 import bpy
 
-FEATURES = ("render_settings", "render_memory", "window_memory", "viewer", "assets", "splines", "generators", "moclone", "handles", "moclone_handles", "object_handles", "deformers", "lights", "sky", "views", "keymap", "quadview", "topbar", "addons_ui", "material_tag", "matpage", "cameras", "camview", "texts", "updates", "phong", "node_arrange", "solo", "viewhistory", "timeline", "timeline_pages", "timeline_edit", "modeltools", "magnify", "renderregion", "nodetabs", "sculpttools", "uvtab", "octane_live", "collapse", "om_menu", "tag_pages", "field_tags", "view_menu", "keepsize", "display_modes")
+FEATURES = ("render_settings", "render_memory", "window_memory", "viewer", "assets", "splines", "generators", "volume", "moclone", "handles", "moclone_handles", "object_handles", "deformers", "lights", "sky", "views", "keymap", "quadview", "topbar", "addons_ui", "material_tag", "matpage", "cameras", "camview", "texts", "updates", "phong", "node_arrange", "solo", "viewhistory", "timeline", "timeline_pages", "timeline_edit", "modeltools", "magnify", "renderregion", "nodetabs", "sculpttools", "uvtab", "octane_live", "collapse", "om_menu", "tag_pages", "field_tags", "view_menu", "keepsize", "display_modes")
 
 KINDS = {}
 PANELS = {}

@@ -634,7 +634,7 @@ CREATE_GROUPS = (
                     ("Connect", "AUTOMERGE_OFF"), ("Symmetry", "MOD_MIRROR"), ("Instance", "OUTLINER_OB_GROUP_INSTANCE"),
                     ("Array", "MOD_ARRAY"), ("Remesh", "MOD_REMESH"), ("Reduce Polygons", "MOD_DECIM"),
                     ("Metaball", "META_BALL"))]),
-    ("volume", [(n, i, None, {}) for n, i in (("Volume Builder", "VOLUME_DATA"), ("Volume Mesher", "MOD_VOLUME_TO_MESH"))]),
+    ("volume", [(n, i, None, {}) for n, i in (("Volume Builder", "VOLUME_DATA"), ("Volume Mesher", "MESH_DATA"))]),
     ("moclone", [(n, i, None, {}) for n, i in (("Cloner", "MOD_ARRAY"), ("Matrix", "LIGHTPROBE_VOLUME"), ("Fracture", "MOD_EXPLODE"),
                  ("Voronoi Fracture", "MOD_EXPLODE"), ("Tracer", "CURVE_PATH"))]),
     None,

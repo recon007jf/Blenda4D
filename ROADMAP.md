@@ -33,6 +33,23 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 - More deformers.
 - Displace from an image, a gentler smoothing mode, a wave that fades with distance, a Shrinkwrap offset.
 
+## Volumes (`volume.py`)
+In: the **Volume Builder** (meshes, splines, text, points, particles, smoke, VDB volumes, metaballs, NURBS surfaces,
+Grease Pencil, collection instances and other Volume Builders under it become one distance volume; an Objects list, which also takes drops from the Object Manager, adds, subtracts or intersects each one in
+order, with Volume From (Auto, Filled, Surface, Points, Edges, Particles, Smoke / Density), Radius, Grow / Shrink and a Filter (Smooth, Clean,
+Relax, Round) per row; filter layers in the list (Smooth, Clean, Relax, Round, Fillet, Grow / Shrink) that change
+everything above them, each limited to where its fields reach (mixed Max, Normal, Min, Add, Subtract or Multiply);
+a soft Blend where each row meets the ones above; and Voxel Size, Grow / Shrink,
+Smoothing and Rounding for the whole; the viewport shows it as a surface, voxels or fog; Render as Fog renders it as fog or smoke with its own density, colour and noise, also under a Volume Mesher) and
+the **Volume Mesher** (turns the Volume Builder under it into a surface: Threshold, Adaptivity, Smoothing, Smooth
+Shading; the surface takes the Mesher's material; Quad Remesh with Target Faces, Keep Sharp Edges and Symmetry X, Y, Z).
+Still to do:
+- Quads whose size follows the detail (Blender's QuadriFlow makes evenly sized quads), and Quad Remesh that updates
+  by itself when the volume changes.
+- Smoke from an Adaptive Domain (the smoke moves with the domain's moving box; today it needs Adaptive Domain off),
+  and liquids (FLIP) as inputs.
+- Fog noise that moves over time.
+
 ## Lights and sky (`lights.py`, `sky.py`)
 - Volumetric glow per light.
 - Sun shadow quality settings.
@@ -76,4 +93,4 @@ own file under `blenda4d/` and plugs in through `kinds.py`, so most items touch 
 ## Platform
 - Testing on Windows and Linux (the add-on is plain Python and should already run there).
 - Checking the tinted icons on high-resolution (Retina) displays.
-- Volume tools, character tools and simulation pages.
+- Character tools and simulation pages.
