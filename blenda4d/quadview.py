@@ -9,9 +9,9 @@ Four views + the button in one of them: that view fills the viewport again and t
 view's state (where it looks, projection, shading and overlays) is remembered, so the next split brings the three
 hidden views back as they were.
 
-Areas are split and joined one step per redraw (an area's size only updates on the next event loop), with Blender's
-own area_split / area_join; a join that does not take falls back to area_close, and a step that still fails stops
-there and leaves every area a working viewport."""
+The split is one step (Blender's own area_split, several times before anything is drawn). Areas are joined one step
+per redraw (an area's size only updates on the next event loop) with area_join; a join that does not take falls back
+to area_close, and a step that still fails stops there and leaves every area a working viewport."""
 import math
 
 import bpy
@@ -126,16 +126,35 @@ def _axis_view(window, area, corner):
 
 # --- splitting and joining ------------------------------------------------------------------------------------------
 
-def _split(window, area, direction):
-    """Split an area in half; returns (top, bottom) for HORIZONTAL, (left, right) for VERTICAL."""
+def _half(window, area, direction):
+    """Split an area in half and give the new half, at once."""
     before = {a.as_pointer() for a in window.screen.areas}
-    with bpy.context.temp_override(window=window, screen=window.screen, area=area, region=_region(area)):
+    with build._ov(window, area):
         bpy.ops.screen.area_split(direction=direction, factor=0.5)
     new = next(a for a in window.screen.areas if a.as_pointer() not in before)
-    yield
-    if direction == "HORIZONTAL":
-        return tuple(sorted((new, area), key=lambda a: -a.y))
-    return tuple(sorted((new, area), key=lambda a: a.x))
+    space = new.spaces.active
+    with build._ov(window, new):                           # a new area has no size, and cannot be split, until Blender
+        space.show_region_ui = not space.show_region_ui    # lays it out: switching a region on and off makes it do so
+        space.show_region_ui = not space.show_region_ui
+    return new
+
+
+def _show(window, area, corner):
+    """A view of the four gets what its corner shows: as it was left, or new (a side view starts as Lines)."""
+    build.dress_view(area)
+    st = _saved.get(corner)
+    rv = area.spaces.active.region_3d
+    if st is not None:
+        apply(area, st)
+    elif AXIS[corner]:
+        from . import display_modes
+        _axis_view(window, area, corner)
+        display_modes.set_shading(area.spaces.active, "G")
+    else:
+        rv.lock_rotation = False
+        if rv.view_perspective == "ORTHO":
+            rv.view_perspective = "PERSP"
+    area.tag_redraw()
 
 
 def _touching(a, b):
@@ -178,7 +197,7 @@ def _join(window, gone, keep):
 
 
 def split_steps(window):
-    """One view -> four."""
+    """One view -> four, all in one step: the four views are there at once, each already showing what it should."""
     from . import magnify
     magnify.leave_all()
     screen = window.screen
@@ -189,37 +208,26 @@ def split_steps(window):
     alone = corner_of_single(view)
     _saved.pop("ALONE", None)
     _saved[alone] = state(view)
+    wide = view.width                                      # an area's size only updates once Blender has drawn: count along
     # one create column for all four views, full height on the right (each view's own strip would repeat it)
     # one tools column for all four too, full height on the left (in the views it would be cut in two), unless the
     # Asset Browser or the open Timeline has it already
     if not roles.areas(screen, "MODES") and not roles.areas(screen, "ASSETS"):
-        tools = yield from build.split(window, view, "VERTICAL", build.side_px(), "LEFT")
-        yield from build.make_role(window, tools, "MODES")
-        view = views(screen)[0]
+        build.role_now(build.split_now(window, view, "VERTICAL", build.side_px(), "LEFT"), "MODES", window)
+        wide -= build.side_px()
     if not roles.areas(screen, "CREATE"):                 # a layout with editors under the viewport has it already
-        create = yield from build.split(window, view, "VERTICAL", build.px(build.CREATE_PX) + build.EDGE, "RIGHT")
-        yield from build.make_role(window, create, "CREATE")
-    view = views(screen)[0]
-    tabs = yield from build.split(window, view, "HORIZONTAL", build.px(build.VIEW_TABS_PX) + build.EDGE, "TOP")
-    yield from build.make_role(window, tabs, "VIEW_TABS")     # one row of View | Render Settings | Render Viewer
-    view = views(screen)[0]
-    left, right = yield from _split(window, view, "VERTICAL")
-    tl, bl = yield from _split(window, left, "HORIZONTAL")
-    tr, br = yield from _split(window, right, "HORIZONTAL")
-    for area, corner in zip((tl, tr, bl, br), CORNERS):
-        build.dress_view(area)
-        st = _saved.get(corner)
-        if st is not None:
-            apply(area, st)
-        elif AXIS[corner]:
-            _axis_view(window, area, corner)
-        else:
-            rv = area.spaces.active.region_3d
-            rv.lock_rotation = False
-            if rv.view_perspective == "ORTHO":
-                rv.view_perspective = "PERSP"
-        area.tag_redraw()
-        yield
+        build.role_now(build.split_now(window, view, "VERTICAL", build.px(build.CREATE_PX) + build.EDGE, "RIGHT", wide), "CREATE", window)
+    # one row of View | Render Settings | Render Viewer
+    build.role_now(build.split_now(window, view, "HORIZONTAL", build.px(build.VIEW_TABS_PX) + build.EDGE, "TOP"), "VIEW_TABS", window)
+    left = _half(window, view, "VERTICAL")                 # Blender gives the left and the lower half as the new one
+    guess = {"TOP": view, "PERSP": left, "FRONT": _half(window, view, "HORIZONTAL"), "RIGHT": _half(window, left, "HORIZONTAL")}
+    for corner, area in guess.items():
+        _show(window, area, corner)
+    yield
+    for area in views(screen):                             # where each view really is, had Blender given the other half
+        corner = corner_of(area, screen)
+        if guess[corner] != area:
+            _show(window, area, corner)
 
 
 def expand_steps(window, keep):

@@ -128,6 +128,7 @@ done = PLAN.pop()
 PLAN += [setup, lambda: shot("qv_single"),
          press(lambda: vs()[0])] + W + [four("split1"), lambda: _seen.update(PERSP=_seen["persp0"]),
          lambda: check(look(corner("PERSP")) == _seen["persp0"], "split1: Perspective keeps the pressed view"),
+         lambda: check(all(look(corner(c))[4] == "WIREFRAME" for c in ("TOP", "RIGHT", "FRONT")), "split1: new side views are Lines"),
          tweak, lambda: shot("qv_four"),
          press(lambda: corner("TOP"))] + W + [single("expand_top", "TOP"), lambda: shot("qv_top_full"),
          press(lambda: vs()[0])] + W + [four("split2"), same("split2"), lambda: shot("qv_four_again"),
