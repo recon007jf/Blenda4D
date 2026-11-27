@@ -7,7 +7,8 @@ folder, so "Blenda 4D" is listed in Preferences > Keymap next to Blender's prese
 
 Turning Blenda mode on also switches to the Blenda 4D key map (as the layout's keys belong to the layout); the
 Blender switch puts back the key map that was chosen before. Choosing another key map in Preferences while Blenda
-mode is on is respected: the Blender switch then leaves that choice alone."""
+mode is on is respected: the Blender switch then leaves that choice alone. With "Use the Blenda 4D Key Map" off in
+the add-on's preferences, the key map is never switched."""
 import json
 import os
 
@@ -66,9 +67,17 @@ def activate(name):
     return False
 
 
+def _wanted():
+    from . import settings
+    try:
+        return settings.get().keys
+    except (KeyError, AttributeError):
+        return True
+
+
 def _use_blenda_keys():
     current = active_name()
-    if current == NAME:
+    if current == NAME or not _wanted():
         return
     # A key map other than ours is in use: remember it for the way back. (If Preferences still name ours from the
     # last session, Blender could not load it at start-up; the remembered one from then still holds.)
