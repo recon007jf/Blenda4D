@@ -165,9 +165,10 @@ def _join(window, gone, keep):
                                          target_xy=(gone.x + gone.width // 2, gone.y + gone.height // 2))
         except (RuntimeError, TypeError):
             pass
-        yield
         if len(screen.areas) < count:
+            build.lay_out(window, keep)                    # it has its new size at once: no redraw to wait for
             return True
+        yield
     try:
         with bpy.context.temp_override(window=window, screen=screen, area=gone, region=_region(gone)):
             bpy.ops.screen.area_close()

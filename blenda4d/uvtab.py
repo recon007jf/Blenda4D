@@ -69,7 +69,7 @@ def add_steps(window, view, sizes):
     area = yield from build.split(window, view, "VERTICAL", round(view.width * share), "RIGHT")
     area.type = "IMAGE_EDITOR"
     area.ui_type = "UV"
-    yield
+    build.lay_out(window, area)
     bar = yield from build.split(window, area, "HORIZONTAL", min(build.px(build.UV_BAR_PX) + build.EDGE, round(area.height * 0.3)), "BOTTOM")
     yield from build.make_role(window, bar, BAR)
     area = next((a for a in window.screen.areas if a.type == "IMAGE_EDITOR"), None)

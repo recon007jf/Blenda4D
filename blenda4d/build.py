@@ -163,6 +163,16 @@ def biggest_view(screen):
     return max(views, key=lambda a: a.width * a.height)
 
 
+def lay_out(window, *areas):
+    """Blender gives an area its size, and its regions theirs, when one of its regions is switched: after this a new
+    area can be measured, split and dressed without waiting for a redraw."""
+    for area in areas:
+        space = area.spaces.active
+        with _ov(window, area):
+            space.show_region_header = not space.show_region_header
+            space.show_region_header = not space.show_region_header
+
+
 def split(window, area, direction, size_px, side):
     size = area.height if direction == "HORIZONTAL" else area.width
     frac = size_px / max(size, 1)
@@ -171,7 +181,8 @@ def split(window, area, direction, size_px, side):
     with _ov(window, area):
         bpy.ops.screen.area_split(direction=direction, factor=factor)
     new = next(a for a in window.screen.areas if a.as_pointer() not in before)
-    yield
+    lay_out(window, new, area)
+    yield from ()
     pair = (new, area)
     if direction == "HORIZONTAL":
         top, bottom = sorted(pair, key=lambda a: -a.y)
@@ -182,15 +193,16 @@ def split(window, area, direction, size_px, side):
 
 def make_role(window, area, name):
     area.type = "PROPERTIES"
-    yield
+    lay_out(window, area)
     for _ in range(20):
         if roles.set_role(area, name):
             break
         area.tag_redraw()
         yield
+    lay_out(window, area)
     roles.hide_nav(area, window)
-    yield
     if name in TOOL_ZOOM:
+        yield
         _zoom(window, area, TOOL_ZOOM[name])
         yield
 
@@ -254,10 +266,9 @@ def _add_column(window, width_px, side, main, bar):
     # Blender makes the smaller part the new area: the column stays the smaller one, or it would land on the other side
     col = split_now(window, view, "VERTICAL", min(px(width_px) + EDGE, round(view.width * 0.45)), side)
     role_now(col, main, window)
-    yield                                                  # Blender lays the column out before it can be split
+    lay_out(window, col)                                   # the column has its size before it is split
     strip = split_now(window, col, "HORIZONTAL", px(MM_BAR_PX) + EDGE, "BOTTOM")
     role_now(strip, bar, window)
-    yield
     yield from settle(window, (col, main), (strip, bar))
 
 
@@ -474,7 +485,6 @@ def dock_steps(window, on):
     spec = layouts.spec_of(screen)
     cols = {n: bool(roles.areas(screen, n)) for n in COLUMNS}
     render_settings.show_view(screen)
-    yield
     from . import viewer
     yield from viewer.leave_steps(window)
     four = len(quadview.views(screen)) > 1
@@ -524,7 +534,6 @@ def switch_steps(window, name):
     screen, ws = window.screen, window.workspace
     old, new = layouts.spec_of(screen), layouts.spec(name)
     render_settings.show_view(screen)                     # Render Settings in the viewport's place: viewport back first
-    yield
     from . import viewer
     yield from viewer.leave_steps(window)
     whole = intact(screen) and not drifted(screen, new["sizes"])

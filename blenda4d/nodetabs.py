@@ -102,9 +102,9 @@ def add_steps(window, low, kind, sizes):
     from . import build
     low.type = "NODE_EDITOR"
     low.ui_type = KINDS[kind][0]
-    yield
+    build.lay_out(window, low)
     _dress(window, low, kind)
-    yield
+    build.lay_out(window, low)
     width = build.px(sizes.get("list", LIST_PX)) + build.EDGE
     side = yield from build.split(window, low, "VERTICAL", min(width, round(low.width * 0.3)), "LEFT")
     yield from build.make_role(window, side, LIST)
@@ -113,13 +113,12 @@ def add_steps(window, low, kind, sizes):
         view = build.biggest_view(window.screen)
         new = yield from build.split(window, view, "VERTICAL", round(view.width * min(0.8, max(0.15, share))), "RIGHT")
         new.type = other
-        yield
+        build.lay_out(window, new)
         _dress(window, new, kind)
     area = editor(window.screen)
     if area is not None:
         _state.pop(area.as_pointer(), None)
         bpy.app.timers.register(lambda: _category(area), first_interval=0.1)
-    yield
 
 
 def remove_steps(window):
