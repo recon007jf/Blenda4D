@@ -298,7 +298,8 @@ def _draw():
     s, width, top = _scale(), mine[2], mine[3]
     boxes = _layout(context.window).get(area.as_pointer(), [])
     strip._rect(0, 0, width, region.height, strip.BG)
-    active = bars.active_tool(context)
+    from . import symmetry_draw
+    active = symmetry_draw.shown_tool(bars.active_tool(context))
     runs = []
     for b in boxes:                                       # touching cells share one rounded button
         if runs and abs(runs[-1][-1][1] - b[3]) < 0.5:

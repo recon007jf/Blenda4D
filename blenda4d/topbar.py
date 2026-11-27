@@ -288,6 +288,94 @@ def symmetry_on(context):
     return ob is not None and ob.type == "MESH" and any(getattr(ob.data, a) for a in _MIRROR.values())
 
 
+def _mesh(context):
+    ob = context.active_object
+    return ob.data if ob is not None and ob.type == "MESH" else None
+
+
+def _sym_get(wm):
+    return symmetry_on(bpy.context)
+
+
+def _sym_set(wm, on):
+    me = _mesh(bpy.context)
+    if me is None:
+        return
+    if on:                                          # back to the planes it had before it was switched off (X at first)
+        for a in me.get("_b4d_sym_axes", "X"):
+            setattr(me, _MIRROR[a], True)
+    else:
+        me["_b4d_sym_axes"] = "".join(a for a, attr in _MIRROR.items() if getattr(me, attr)) or "X"
+        for attr in _MIRROR.values():
+            setattr(me, attr, False)
+
+
+def _axis_prop(axis):
+    def get(wm):
+        me = _mesh(bpy.context)
+        return bool(me) and getattr(me, _MIRROR[axis])
+
+    def put(wm, v):
+        me = _mesh(bpy.context)
+        if me is not None:
+            setattr(me, _MIRROR[axis], v)
+    return bpy.props.BoolProperty(name=axis, get=get, set=put, description=f"Mirror across the plane square to {axis}")
+
+
+def _type_get(wm):
+    me = _mesh(bpy.context)
+    return 1 if me is not None and me.use_mirror_topology else 0
+
+
+def _type_set(wm, v):
+    me = _mesh(bpy.context)
+    if me is not None and v in (0, 1):
+        me.use_mirror_topology = v == 1
+
+
+SYM_PROPS = {
+    "b4d_sym_on": bpy.props.BoolProperty(name="Symmetry", get=_sym_get, set=_sym_set,
+                                         description="Edits on one side of the active mesh are made on the other side too"),
+    "b4d_sym_planes": bpy.props.BoolProperty(name="Show Planes", default=True,
+                                             description="Draw the mirror planes and the mirror image of the selection in the viewport"),
+    "b4d_sym_type": bpy.props.EnumProperty(name="Type", get=_type_get, set=_type_set, items=(
+        ("PLANAR", "Planar", "Mirror across the planes, finding each point's partner by its position", 0),
+        ("TOPOLOGY", "Topology", "Find each point's partner by how the mesh is connected, so it still works once the shape is no longer exactly symmetrical (Blender: Topology Mirror)", 1))),
+    "b4d_sym_x": _axis_prop("X"), "b4d_sym_y": _axis_prop("Y"), "b4d_sym_z": _axis_prop("Z"),
+}
+
+
+class BLENDA4D_PT_tb_symmetry(bpy.types.Panel):
+    bl_idname = "BLENDA4D_PT_tb_symmetry"
+    bl_label = "Symmetry Hub"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "HEADER"
+    bl_ui_units_x = 12
+
+    def draw(self, context):
+        wm = context.window_manager
+        col = self.layout.column()
+        if _mesh(context) is None:
+            col.label(text="Select a polygon object", icon="INFO")
+            col = col.column()
+            col.enabled = False
+
+        def line(label):                            # label on the left, the control on the right
+            sp = col.split(factor=0.3)
+            sp.label(text=label)
+            return sp.row(align=True)
+
+        line("Symmetry").prop(wm, "b4d_sym_on", text="")
+        line("Show Planes").prop(wm, "b4d_sym_planes", text="")
+        row = line("Type")
+        row.prop_enum(wm, "b4d_sym_type", "PLANAR")
+        row.prop_enum(wm, "b4d_sym_type", "TOPOLOGY")
+        col.separator()
+        for a in "XYZ":
+            line(a).prop(wm, "b4d_sym_" + a.lower(), text="")
+
+
+
 # --- 6 Solo ---------------------------------------------------------------------------------------------------------
 def solo_on(context):
     from . import solo
@@ -458,7 +546,8 @@ def groups(context):
         [(1, lambda g: _hold(g, "blenda4d.tb_snap", "BLENDA4D_MT_tb_snap", "SNAP_ON" if ts.use_snap else "SNAP_OFF", depress=ts.use_snap))],
         [(1, lambda g: _hold(g, "blenda4d.tb_workplane", "BLENDA4D_MT_tb_workplane", "GRID", depress=_state["workplane"] is not None))],
         [(1, lambda g: g.operator("blenda4d.tb_soft", text="", icon="PROP_ON", depress=getattr(ts, _soft_attr(context))))],
-        [(1, lambda g: _hold(g, "blenda4d.tb_symmetry", "BLENDA4D_MT_tb_symmetry", "MOD_MIRROR", depress=symmetry_on(context), axis="X"))],
+        [(1, lambda g: _hold(g, "blenda4d.tb_symmetry", "BLENDA4D_MT_tb_symmetry", "MOD_MIRROR", depress=symmetry_on(context), axis="X")),
+         (1, lambda g: g.popover("BLENDA4D_PT_tb_symmetry", text="", icon="PREFERENCES"))],
         [(1, lambda g: _hold(g, "blenda4d.tb_solo", "BLENDA4D_MT_tb_solo", "SELECT_INTERSECT", depress=solo_on(context)))],
         [(1, lambda g: _hold(g, "blenda4d.tb_render_view", "BLENDA4D_MT_tb_render_view", "SHADING_RENDERED",
                              depress=bool(sp and sp.shading.type == "RENDERED"))),
@@ -469,7 +558,7 @@ def groups(context):
 
 classes = (BLENDA4D_OT_tb_axis, BLENDA4D_OT_tb_snap, BLENDA4D_OT_tb_snap_to, BLENDA4D_MT_tb_snap, BLENDA4D_OT_tb_workplane,
            BLENDA4D_OT_tb_workplane_set, BLENDA4D_MT_tb_workplane, BLENDA4D_OT_tb_soft, BLENDA4D_OT_tb_symmetry,
-           BLENDA4D_MT_tb_symmetry, BLENDA4D_OT_tb_solo, BLENDA4D_MT_tb_solo, BLENDA4D_OT_tb_render_view,
+           BLENDA4D_MT_tb_symmetry, BLENDA4D_PT_tb_symmetry, BLENDA4D_OT_tb_solo, BLENDA4D_MT_tb_solo, BLENDA4D_OT_tb_render_view,
            BLENDA4D_MT_tb_render_view, BLENDA4D_OT_tb_later, BLENDA4D_MT_tb_render)
 _registered = [False]
 
@@ -504,11 +593,20 @@ def restore():
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    for k, v in SYM_PROPS.items():
+        setattr(bpy.types.WindowManager, k, v)
+    from . import symmetry_draw
+    symmetry_draw.register()
     _registered[0] = True
 
 
 def unregister():
     _registered[0] = False
+    from . import symmetry_draw
+    symmetry_draw.unregister()
+    for k in SYM_PROPS:
+        if hasattr(bpy.types.WindowManager, k):
+            delattr(bpy.types.WindowManager, k)
     restore()
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
