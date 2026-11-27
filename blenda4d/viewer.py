@@ -9,7 +9,9 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
+from collections import OrderedDict
 
 import bpy
 import numpy as np
@@ -18,6 +20,7 @@ from . import build, roles
 
 TOP, SIDE, BOTTOM = "PV_TOP", "PV_SIDE", "PV_BOTTOM"
 PARTS = (TOP, SIDE, BOTTOM)
+PICTURE = ("IMAGE_EDITOR", "VIEW_3D", "INFO")   # what the picture's area can be (INFO: while a GPU engine renders)
 WINDOW = (1200, 800)
 TOP_PX, SIDE_PX, BOTTOM_PX = 60, 250, 92
 RATES = (1, 5, 10, 12, 15, 18, 24, 25, 30, 48, 50, 60, 100)
@@ -89,7 +92,7 @@ def editor(win=None):
     if top is None:
         return None
     gap = 6 + round(4 * build._scale())
-    under = [a for a in win.screen.areas if a.type in {"IMAGE_EDITOR", "VIEW_3D"} and abs(a.y + a.height - top.y) <= gap
+    under = [a for a in win.screen.areas if a.type in PICTURE and abs(a.y + a.height - top.y) <= gap
              and top.x - 4 <= a.x < top.x + top.width]
     return min(under, key=lambda a: a.x) if under else None
 
@@ -109,7 +112,7 @@ def is_part(context):
     a = context.area
     if a is None or context.window is None:
         return False
-    return roles.role(a) in PARTS or (a.type in {"IMAGE_EDITOR", "VIEW_3D"} and _top(context.screen) is not None and a == editor(context.window))
+    return roles.role(a) in PARTS or (a.type in PICTURE and _top(context.screen) is not None and a == editor(context.window))
 
 
 def redraw():
@@ -202,6 +205,8 @@ def _pic(win):
 
 
 def _dress(area):
+    if area is not None and OWN["on"] and area.type in {"IMAGE_EDITOR", "INFO"}:
+        return _own_take(area)
     if area is None or area.type != "IMAGE_EDITOR":
         return
     sp = area.spaces.active
@@ -342,6 +347,10 @@ def show(seq, index):
     """Put a frame in the picture. Blender's Image Editor keeps the frames it has read, so a sequence plays."""
     S.seq, S.index, S.layers = seq, max(0, min(index, len(seq.frames) - 1)), False
     sp, frame = _space(), current()
+    if OWN["on"] and frame is not None:                 # the viewer paints the picture itself
+        S.live = frame.state == "rendering" or not frame.path
+        _own_want()
+        return redraw()
     if sp is None or frame is None:
         return redraw()
     if compare_ready():
@@ -539,12 +548,8 @@ def _playback():
         return None
     first = S.seq.frames[0].number
     i, low, high = S.index + S.play, S.lo - first, S.hi - first
-    if S.rendering:                                     # play what is made, and stop at the newest finished frame
+    if S.rendering:                                     # play what is made, up to the newest finished frame
         high = min(high, _last_done())
-        if i > high:
-            S.play = 0
-            redraw()
-            return None
     if i > high or i < low:
         if S.repeat == "SIMPLE":
             S.play = 0
@@ -626,7 +631,10 @@ def begin(scene, first, last, keep, seq=None):
         hs = getattr(bpy.app.handlers, h)
         if fn not in hs:
             hs.append(fn)
+    OWN["on"] = _own_fits(scene)
     open_docked(bpy.context)
+    if OWN["on"]:
+        _own_begin()
     sp = _space()
     if sp is not None:
         sp.image = bpy.data.images.get("Render Result")
@@ -680,6 +688,8 @@ def _drain():
             f = seq.frames[-1]
             f.path = next((p for p in paths if os.path.isfile(p)), "")
             f.state, f.seconds, f.saved = "done", now - f.seconds, seq.kept
+            if OWN["on"]:
+                _own_want()
         elif kind == "end":
             _ended(seq)
             return None
@@ -694,6 +704,7 @@ def _drain():
 
 def _ended(seq):
     S.rendering = False
+    _own_end()
     scene = bpy.context.scene
     if S.span:
         scene.frame_start, scene.frame_end = S.span
@@ -809,6 +820,123 @@ def remove(seqs):
     redraw()
 
 
+# --- while a GPU engine renders -----------------------------------------------------------------------------------------------
+# A render made on the graphics card keeps Blender's drawing of pictures and viewports waiting until each frame is
+# done: with an Image Editor on screen the whole window stands still for most of the render, and frames cannot play.
+# So for these engines the picture's area is an Info editor that the viewer paints itself (viewer_ui._draw_own): the
+# finished frames are read from their files on another thread and shown as textures. When the render ends the Image
+# Editor is back, with all it can do.
+GPU_ENGINES = ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT", "BLENDER_WORKBENCH")
+OWN_ROOM = 3.0e8              # bytes of textures kept ready to play; the frames past that are read again
+OWN = {"on": False, "want": None, "shown": None, "jobs": [], "ready": {}, "tex": OrderedDict(), "bad": set(), "thread": None}
+
+
+def _own_fits(scene):
+    r = scene.render
+    if bpy.app.background or r.engine not in GPU_ENGINES or r.is_movie_format:
+        return False
+    try:
+        import OpenImageIO  # noqa: F401                    # comes with Blender; reads a file without touching Blender's data
+    except ImportError:
+        return False
+    return True
+
+
+def _own_begin():
+    OWN.update(want=None, shown=None, jobs=[])
+    for key in ("ready", "tex", "bad"):
+        OWN[key].clear()
+    if OWN["thread"] is None or not OWN["thread"].is_alive():
+        OWN["thread"] = threading.Thread(target=_own_read, daemon=True)
+        OWN["thread"].start()
+    _dress(editor())
+    if not bpy.app.timers.is_registered(_own_tick):
+        bpy.app.timers.register(_own_tick, first_interval=0.05)
+
+
+def _own_take(area):
+    """The picture's area becomes the one the viewer paints."""
+    area.type = "INFO"
+    area.spaces.active.show_region_header = False
+
+
+def _own_end():
+    """The Image Editor is back in the picture's area, however the render ended (also in a file saved meanwhile)."""
+    OWN.update(on=False, want=None, shown=None, jobs=[])
+    for key in ("ready", "tex"):
+        OWN[key].clear()
+    area = editor()
+    if area is not None and area.type == "INFO":
+        area.type = "IMAGE_EDITOR"
+        _dress(area)
+
+
+def _own_want():
+    """Which finished frame the picture shows (the one picked, or the newest while it follows the render). The reader
+    takes that one first, then the frames that play next."""
+    seq, f = S.seq, current()
+    if S.live or f is None or f.state != "done" or not f.path:
+        i = _last_done()
+        f = seq.frames[i] if i >= 0 else None
+    if f is None:
+        return
+    jobs = [f.path]
+    if S.play and not S.live:
+        ahead = seq.frames[S.index + 1:S.index + 9] if S.play > 0 else seq.frames[max(S.index - 8, 0):S.index][::-1]
+        jobs += [x.path for x in ahead if x.state == "done" and x.path]
+    for path in [p for p in list(OWN["ready"]) if p not in jobs]:
+        OWN["ready"].pop(path, None)
+    OWN["want"], OWN["jobs"] = f.path, jobs
+
+
+def _own_tick():
+    """The frame asked for has been read: the picture is drawn again."""
+    if not OWN["on"]:
+        return None
+    area = editor() if OWN["want"] in OWN["ready"] else None
+    if area is not None:
+        area.tag_redraw()
+    return 0.03
+
+
+def _read_file(oiio, path):
+    """A file's pixels as they show on screen: rows from the bottom, four channels, 0 to 1."""
+    inp = oiio.ImageInput.open(path)
+    if inp is None:
+        raise OSError(path)
+    try:
+        spec = inp.spec()
+        n = min(spec.nchannels, 4)
+        whole = str(spec.format) in ("uint8", "uint16")        # saved the way it shows; a float file is scene light
+        px = inp.read_image(0, 0, 0, n, "uint8" if whole else "float")
+    finally:
+        inp.close()
+    px = np.asarray(px, dtype=np.float32).reshape(spec.height, spec.width, n)
+    if whole:
+        px /= 255.0
+    else:
+        px[..., :3] = np.clip(px[..., :3], 0.0, 1.0) ** (1.0 / 2.2)
+    if n < 4:
+        out = np.ones((spec.height, spec.width, 4), dtype=np.float32)
+        out[..., :3] = px[..., :3] if n == 3 else px[..., :1]
+        px = out
+    return np.ascontiguousarray(px[::-1])
+
+
+def _own_read():
+    """On a thread of its own: files are read, nothing of Blender's is touched."""
+    import OpenImageIO as oiio
+    while OWN["on"]:
+        path = next((p for p in list(OWN["jobs"]) if p not in OWN["tex"] and p not in OWN["ready"] and p not in OWN["bad"]), None)
+        if path is None or (len(OWN["ready"]) >= 4 and path != OWN["want"]):
+            time.sleep(0.02)
+            continue
+        try:
+            OWN["ready"][path] = _read_file(oiio, path)
+        except Exception:                                  # a file this cannot read: the frame shows when the render ends
+            OWN["bad"].add(path)
+
+
 # --- files ---------------------------------------------------------------------------------------------------------------------
 @bpy.app.handlers.persistent
 def _before_save(*_a):
@@ -826,6 +954,7 @@ def _loaded(*_a):
     """Another file: History stays, its images are read again when they are shown."""
     S.play, S.four, S.pixels_key, S.ab = 0, False, None, False
     _ready.clear()
+    bpy.app.timers.register(_own_end, first_interval=0.1)      # a file saved while the viewer painted the picture
 
 
 _outside = []
@@ -894,7 +1023,8 @@ def unregister():
         h = getattr(bpy.app.handlers, name)
         if fn in h:
             h.remove(fn)
-    for t in (_playback, _drain, _thumbs):
+    _own_end()
+    for t in (_playback, _drain, _thumbs, _own_tick):
         if bpy.app.timers.is_registered(t):
             bpy.app.timers.unregister(t)
     if S.keep_display:

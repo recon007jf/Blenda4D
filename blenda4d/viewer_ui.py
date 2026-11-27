@@ -425,6 +425,39 @@ def _draw():
     (_draw_side if name == V.SIDE else _draw_bottom)(ctx.region)
 
 
+def _own_texture(path):
+    """A finished frame as a texture: it can only be made while drawing. The ones not shown for long are let go."""
+    own = V.OWN
+    if path in own["ready"]:
+        px = own["ready"].pop(path)
+        h, w = px.shape[:2]
+        own["tex"][path] = (gpu.types.GPUTexture((w, h), format="RGBA8", data=gpu.types.Buffer("FLOAT", w * h * 4, px.ravel())), (w, h))
+        while len(own["tex"]) > 2 and sum(t[1][0] * t[1][1] * 4 for t in own["tex"].values()) > V.OWN_ROOM:
+            own["tex"].popitem(last=False)
+    if path in own["tex"]:
+        own["tex"].move_to_end(path)
+    return own["tex"].get(path)
+
+
+def _draw_own():
+    """The picture while a GPU engine renders (viewer.py): the frame asked for, whole, in the middle of its area."""
+    ctx, own = bpy.context, V.OWN
+    if not own["on"] or ctx.region.type != "WINDOW" or ctx.area != V.editor():
+        return
+    w, h = ctx.region.width, ctx.region.height
+    strip._rect(0, 0, w, h, BG)
+    for path in [p for p in list(own["ready"]) if p != own["want"]][:2]:      # frames read ahead for playing
+        _own_texture(path)
+    if _own_texture(own["want"]) is not None:
+        own["shown"] = own["want"]
+    tex = own["tex"].get(own["shown"])                     # until the one asked for is read: the one before
+    if tex is None:
+        return
+    iw, ih = tex[1]
+    k = min(w / iw, h / ih)
+    draw_texture_2d(tex[0], ((w - iw * k) / 2, (h - ih * k) / 2), iw * k, ih * k)
+
+
 def _image_box(region):
     v = region.view2d
     return v.view_to_region(0.0, 0.0, clip=False), v.view_to_region(1.0, 1.0, clip=False)
@@ -955,6 +988,8 @@ def register():
     _handles.append((P, P.draw_handler_add(_draw, (), "WINDOW", "POST_PIXEL")))
     I = bpy.types.SpaceImageEditor
     _handles.append((I, I.draw_handler_add(_draw_compare, (), "WINDOW", "POST_PIXEL")))
+    N = bpy.types.SpaceInfo
+    _handles.append((N, N.draw_handler_add(_draw_own, (), "WINDOW", "POST_PIXEL")))
     kc = bpy.context.window_manager.keyconfigs.addon
     if not kc:
         return
@@ -968,7 +1003,8 @@ def register():
     ki = kc.keymaps.new(name="Image", space_type="IMAGE_EDITOR", region_type="WINDOW")
     for value in ("PRESS", "DOUBLE_CLICK"):
         _keymaps.append((ki, ki.keymap_items.new(BLENDA4D_OT_viewer_drag.bl_idname, "LEFTMOUSE", value, head=True)))
-    for keymap in (km, ki):
+    kn = kc.keymaps.new(name="Info", space_type="INFO", region_type="WINDOW")     # the picture while a GPU engine renders
+    for keymap in (km, ki, kn):
         for kind, mods, cmd in KEYS:
             kmi = keymap.keymap_items.new("blenda4d.viewer_cmd", kind, "PRESS", head=True, **mods)
             kmi.properties.cmd = cmd
