@@ -539,12 +539,8 @@ def _playback():
         return None
     first = S.seq.frames[0].number
     i, low, high = S.index + S.play, S.lo - first, S.hi - first
-    if S.rendering:                                     # play what is made, and stop at the newest finished frame
+    if S.rendering:                                     # play what is made, up to the newest finished frame
         high = min(high, _last_done())
-        if i > high:
-            S.play = 0
-            redraw()
-            return None
     if i > high or i < low:
         if S.repeat == "SIMPLE":
             S.play = 0
