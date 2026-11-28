@@ -142,14 +142,12 @@ def dock_steps(win):
     if _top(screen) is not None:
         return
     render_settings.show_view(screen)
-    yield
     S.four = len(quadview.views(screen)) > 1
     if S.four:
         yield from quadview.expand_steps(win, build._persp(screen))
     view = build.biggest_view(screen)
     view.type = "IMAGE_EDITOR"
     view.ui_type = "IMAGE_EDITOR"
-    yield
     yield from _split_parts(win, view, True)
     _after_dock(win)
 
@@ -177,7 +175,6 @@ def leave_steps(win):
     pic = _pic(win)
     if pic is not None:
         pic.type = "VIEW_3D"
-    yield
     for a in screen.areas:
         if a.type == "VIEW_3D":
             build.dress_view(a)
